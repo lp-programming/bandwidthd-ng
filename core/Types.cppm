@@ -1,6 +1,5 @@
 module;
 export module Types;
-export import Exception;
 export import EnumFlags;
 export import util;
 export import <sys/types.h>;

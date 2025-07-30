@@ -2,3 +2,5 @@
 *.so
 modules/*
 bin/*
+status.json
+__pycache__

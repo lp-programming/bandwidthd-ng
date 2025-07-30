@@ -1,6 +1,5 @@
-import Postgres;
-import Exception;
 import Types;
+import BandwidthD;
 import <sys/socket.h>;
 import <map>;
 import <vector>;
@@ -121,5 +120,4 @@ PYBIND11_MODULE(PyBandwidthD, m) {
       ;
 
     
-    py::register_exception<Exception::Exception>(m, "Exception::Exception", PyExc_RuntimeError);
   }

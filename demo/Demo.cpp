@@ -1,6 +1,5 @@
 import Types;
 import BandwidthD;
-import Exception;
 import <vector>;
 import <string>;
 import <span>;
@@ -17,7 +16,6 @@ public:
 };
 
 int Main(int argc, char **argv) {
-  Exception::set_terminate();
   Config config{
   };
 

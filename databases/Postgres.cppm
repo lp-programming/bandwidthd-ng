@@ -1,7 +1,6 @@
 module;
 export module Postgres;
 export import Database;
-export import Exception;
 export import Types;
 export import <pqxx/pqxx>;
 

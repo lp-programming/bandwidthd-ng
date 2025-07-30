@@ -2,7 +2,6 @@ module;
 
 export module BandwidthD;
 export import Types;
-export import Exception;
 export import HeaderView;
 export import <iostream>;
 export import <pcap/pcap.h>;
@@ -364,21 +363,18 @@ public:
     pcap_set_snaplen(pc, config.snaplen);
     pcap_setnonblock(pc, true, errbuf.data());
     if (pcap_activate(pc)) {
-      throw Exception::Exception{
-        pcap_geterr(pc),
-        Exception::Severity::Fatal
+      throw std::runtime_error{
+        pcap_geterr(pc)
       };
     }
     if (pcap_compile(pc, &fcode, config.filter.c_str(), 1, 0) < 0) {
-      throw Exception::Exception{
-        pcap_geterr(pc),
-        Exception::Severity::Fatal
+      throw std::runtime_error{
+        pcap_geterr(pc)
       };
     }
     if (pcap_setfilter(pc, &fcode) < 0) {
-      throw Exception::Exception{
-        pcap_geterr(pc),
-        Exception::Severity::Error
+      throw std::runtime_error{
+        pcap_geterr(pc)
       };
 
     }

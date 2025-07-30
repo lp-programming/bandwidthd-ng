@@ -35,7 +35,6 @@ public:
 };
 
 int Main(int argc, char **argv) {
-  Exception::set_terminate();
   Config config{};
   config.interval = 10;
 
