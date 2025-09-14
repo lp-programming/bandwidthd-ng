@@ -5,6 +5,7 @@ import subprocess
 import pathlib
 import hashlib
 import time
+import enum
 
 from targets import targets
 
@@ -19,17 +20,19 @@ else:
 def system(args):
     return subprocess.Popen(args, stdin=subprocess.PIPE)
 
-class State:
-    default = "default"
-    pending = "pending"
-    rebuilt = "rebuilt"
-    skipped = "skipped"
-    failure = "failure"
+class State(enum.Enum):
+    default = 0
+    pending = 1
+    rebuilt = 2
+    skipped = 3
+    failure = 4
+    missing = 5
 
 class Task:
     building = 0
     limit = 1
     state = State.default
+    globalState = State.default
     def __init__(self, t):
         self.proc = None
         self.target = t
@@ -39,6 +42,8 @@ class Task:
         if self.state is State.rebuilt:
             return 0
         if self.proc is None:
+            if Task.globalState is State.failure:
+                return 1
             if not self.maybeStart():
                 return None
         r = self.proc.poll()
@@ -47,8 +52,9 @@ class Task:
                 Task.building -= 1
             if r:
                 print("Failure running",self)
-                print(self.args)
+                print(str.join(' ', [repr(i) for i in self.args]))
                 self.state = State.failure
+                Task.globalState = State.failure
             else:
                 self.state = State.rebuilt
         return r
@@ -58,10 +64,13 @@ class Task:
             return True
         return False
     def start(self):
-        print("Building",self)
+        if self.globalState is State.failure:
+            self.state = State.failure
+            return False
+        print("building:",self)
         if self.state is not State.default:
             print("Trying to start already started task", self)
-            return
+            return False
         Task.building += 1
         self.state = State.pending
         args = list(self.target.getArgs())
@@ -69,14 +78,11 @@ class Task:
         self.proc = system(args)
         if self.target.name == "clean":
             status.clear()
-    def wait(self, errorShutdown=False):
+        return True
+    def wait(self):
         if self.proc is None:
-            if errorShutdown:
-                self.state = State.failure
+            if not self.start():
                 return
-            self.start()
-        if self.state is not State.pending:
-            print("Awaiting already resolved task", self)
         self.proc.wait()
         self.poll()
     def __repr__(self):
@@ -88,6 +94,13 @@ class Target:
     state = State.default
     task = None
     mode = "debug"
+    @classmethod
+    def syncState(cls):
+        for k,v in cls.__used.items():
+            if v.state is State.rebuilt:
+                status[k] = v.sha
+            if v.state is State.failure:
+                status[k] = None
     @staticmethod
     def __new__(cls, tname):
         t = cls.__used.get(tname, None)
@@ -116,7 +129,7 @@ class Target:
     def poll(self):
         if self.state is State.skipped or self.state is State.rebuilt:
             return 0
-        if self.state is State.failure:
+        if self.state is State.failure or self.state is State.missing:
             return 1
         waiting = False
         for p in self.pending:
@@ -127,7 +140,7 @@ class Target:
                 self.state = State.failure
                 return ec
         if waiting:
-            return
+            return None
         if not self.task:
             self.state = State.rebuilt
             return 0
@@ -138,37 +151,55 @@ class Target:
             else:
                 self.state = State.rebuilt
         return ec
-    def wait(self, errorShutdown=False):
+    def wait(self):
         if self.state is not State.pending:
             return
         for p in self.pending:
             if self.poll():
                 self.state = State.failure
                 return
-            p.wait(errorShutdown)
+            p.wait()
         if self.poll():
            self.state = State.failure
            return
         if self.task:
-            self.task.wait(errorShutdown)
+            self.task.wait()
             if self.task.poll():
                 self.state = State.failure
             else:
                 self.state = State.rebuilt
-                status[self.name] = self.sha
     def prebuild(self, mode="debug"):
         if self.state is not State.default:
             return self
         self.mode = mode
         print("prebuild:", self)
-        rebuild = self.__target.virtual or (status.get(self.name, None) != self.sha)
+        for r in self.__target.requirements:
+            if not r():
+                print("Not building",self,"due to missing dep")
+                self.state = State.missing
+                return self
+        if self.__target.virtual:
+            rebuild = bool(list(self.__target.cmd))
+        else:
+            rebuild = status.get(self.name, None) != self.sha
         self.pending = []
         for d in self.__target.deps:
             dep = Target(d)
             dep.prebuild(mode)
             if dep.state is not State.skipped:
+                if dep.state is State.missing:
+                    self.state = State.missing
+                    self.pending.clear()
+                    return self
                 rebuild = True
                 self.pending.append(dep)
+        for t in self.__target.targets:
+            target = Target(t)
+            target.prebuild(mode)
+            if target.state is State.skipped or target.state is State.missing:
+                continue
+            rebuild = True
+            self.pending.append(target)
         if rebuild:
             self.state = State.pending
             self.task = Task(self)
@@ -205,6 +236,8 @@ def main(argv = sys.argv):
     for b in building:
         b.wait()
         ec |= b.poll()
+
+    Target.syncState()
         
     with STATUS_FILE.open("w", encoding="utf-8") as f:
         json.dump(obj=status, fp=f)

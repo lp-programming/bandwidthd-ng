@@ -2,6 +2,12 @@ module;
 export module Database;
 export import BandwidthD;
 export import Types;
+export import <chrono>;
+export import <exception>;
+import <sstream>;
+import <iomanip>;    // for std::get_time
+import <ctime>;      // for std::tm, std::mktime
+
 export typedef __uint128_t uint128_t ;
 
 export 
@@ -10,7 +16,7 @@ class Cursor : public CONN {
 public:
   int sensor_id{};
   CONN& connection;
-  
+
   Cursor(Config& config): CONN(config), connection(*this){
     validate();
   }
@@ -27,7 +33,8 @@ public:
     
   }
 
-  void SerializeData(const auto& IPs, const auto& both, const int duration) {
+  void SerializeData(const auto& IPs, const auto& both, const std::chrono::seconds duration) {
+    auto d = duration.count();
     auto txn = connection.begin();
     for (const auto& entry : IPs) {
       const auto &ip = entry.first;
@@ -36,8 +43,8 @@ public:
       const auto &recv = data.Received;
       const auto &label = data.label;
       const std::string strip = util::format_ip(ip);
-      txn.exec("INSERT INTO bd_tx_log values ($1, $2, $3, now(), $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);", {sensor_id, label, strip, duration, sent.packet_count, sent.total, sent.icmp, sent.udp, sent.tcp, sent.ftp, sent.http, sent.mail, sent.p2p});
-      txn.exec("INSERT INTO bd_rx_log values ($1, $2, $3, now(), $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);", {sensor_id, label, strip, duration, recv.packet_count, recv.total, recv.icmp, recv.udp, recv.tcp, recv.ftp, recv.http, recv.mail, recv.p2p});
+      txn.exec("INSERT INTO bd_tx_log values ($1, $2, $3, now(), $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);", {sensor_id, label, strip, d, sent.packet_count, sent.total, sent.icmp, sent.udp, sent.tcp, sent.ftp, sent.http, sent.mail, sent.p2p});
+      txn.exec("INSERT INTO bd_rx_log values ($1, $2, $3, now(), $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);", {sensor_id, label, strip, d, recv.packet_count, recv.total, recv.icmp, recv.udp, recv.tcp, recv.ftp, recv.http, recv.mail, recv.p2p});
     }
 
 
@@ -49,10 +56,60 @@ public:
       const std::string strsrcip = util::format_ip(srcip);
       const std::string strdstip = util::format_ip(dstip);
             
-      txn.exec("INSERT INTO bd_tx_rx_log values ($1, $2, $3, $4, now(), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14);", {sensor_id, data.label, strsrcip, strdstip, duration, data.packet_count, data.total, data.icmp, data.udp, data.tcp, data.ftp, data.http, data.mail, data.p2p});
+      txn.exec("INSERT INTO bd_tx_rx_log values ($1, $2, $3, $4, now(), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14);", {sensor_id, data.label, strsrcip, strdstip, d, data.packet_count, data.total, data.icmp, data.udp, data.tcp, data.ftp, data.http, data.mail, data.p2p});
     }
 
     txn.commit();
+  }
+
+  const std::vector<SummaryData> GetData(const std::string_view start,
+                                   const std::string_view end,
+                                   bool relative_start,
+                                   bool relative_end,
+                                   const std::string_view sn,
+                                   const std::string_view table,
+                                   const std::string_view field) {
+    std::vector<SummaryData> data{};
+    auto txn = connection.begin();
+    std::string query = std::format("select timestamp, sample_duration, sum(total) as total, sum(packet_count) as packet_count, sum(icmp) as icmp, sum(udp) as udp, sum(tcp) as tcp, sum(ftp) as ftp, sum(http) as http, sum(mail) as mail, sum(p2p) as p2p from bd_{}_log where {} << $1 and timestamp > ", table, field);
+    if (relative_start) {
+      query += "now() - $2::interval and timestamp < ";
+    }
+    else {
+      query += "$2 and timestamp < ";
+    }
+    if (relative_end) {
+      query += "now() - $3::interval ";
+    }
+    else {
+      query += "$3 ";
+    }
+    query += "group by timestamp, sample_duration order by timestamp ;";
+    std::println("{}", query);
+    for (const auto& row: txn.exec(query, {sn, start, end})) {
+      SummaryData& d = data.emplace_back();
+      std::tm tm{};
+      std::istringstream ss(row["timestamp"].view());
+      ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
+      if (ss.fail()) {
+        std::println("Parse failed: {}", row["timestamp"].view());
+      }
+      std::time_t time = std::mktime(&tm);
+      d.timestamp = std::chrono::system_clock::from_time_t(time);
+
+      //d.sample_duration = row["sample_duration"];
+      d.net = sn;
+      d.total = row[2].template as<uint64_t>();
+      d.icmp = row["icmp"].template as<uint64_t>();
+      d.udp = row["udp"].template as<uint64_t>();
+      d.tcp = row["tcp"].template as<uint64_t>();
+      d.ftp = row["ftp"].template as<uint64_t>();
+      d.http = row["http"].template as<uint64_t>();
+      d.mail = row["mail"].template as<uint64_t>();
+      d.p2p = row["p2p"].template as<uint64_t>();
+      d.count = row["packet_count"].template as<uint64_t>();
+    }
+    return data;
   }
 };
 

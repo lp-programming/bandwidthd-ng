@@ -3,6 +3,7 @@ module;
 export module BandwidthD;
 export import Types;
 export import HeaderView;
+export import Syslog;
 export import <iostream>;
 export import <pcap/pcap.h>;
 export import <poll.h>;
@@ -13,9 +14,10 @@ export import <net/ethernet.h>;
 export import <format>;
 export import <string>;
 export import <concepts>;
-
+export import <unordered_map>;
 
 using StatField = uint64_t Statistics::*;
+export using Logger = Syslog::Logger;
 
 namespace util {
   inline StatField GetSubProto(const net_u16 port) {
@@ -117,8 +119,8 @@ struct EmptyMixin {};
 template<typename BD>
 class IPv6DefaultMixin {
 public:
-  std::map<net_u128, IPData> ips6{};
-  std::map<std::pair<net_u128,net_u128>, Statistics> txrx6{};
+  std::unordered_map<net_u128, IPData> ips6{};
+  std::unordered_map<std::pair<net_u128,net_u128>, Statistics> txrx6{};
 public:  
   void ProcessIPv6(const std::string&, const std::string&, const net_u128 src, const net_u128 dst, const uint16_t length, const ip6_hdr& iheader) {
     const Config& cfg = static_cast<const BD&>(*this).config;
@@ -197,8 +199,8 @@ public:
 template<typename BD>
 class IPv4DefaultMixin {
 public:
-  std::map<net_u32, IPData> ips{};
-  std::map<std::pair<net_u32,net_u32>, Statistics> txrx{};
+  std::unordered_map<net_u32, IPData> ips{};
+  std::unordered_map<std::pair<net_u32,net_u32>, Statistics> txrx{};
   void ProcessIPv4(const std::string&, const std::string&, const net_u32 src, const net_u32 dst, const uint16_t length, const ip& iheader) {
     const Config& cfg = static_cast<const BD&>(*this).config;
 
@@ -357,31 +359,42 @@ public:
   BD& self;
   Sensor(Config& config): IPv4Mixin<BD,M>(), IPv6Mixin<BD,M>(), config(config), self(static_cast<BD&>(*this)) {
     static_assert(SanityChecker<BD,M>::Valid(), "Missing method or inconsistent mode selection");
+    Logger::init(config.syslog_prefix, Syslog::Option::PID, Syslog::Facility::DAEMON);
+    Logger::info(std::format("Opening {}", config.dev));
     pcap_init(PCAP_CHAR_ENC_UTF_8, nullptr);
     pc = pcap_create(config.dev.c_str(), errbuf.data());
     pcap_set_promisc(pc, config.promisc);
     pcap_set_snaplen(pc, config.snaplen);
     pcap_setnonblock(pc, true, errbuf.data());
     if (pcap_activate(pc)) {
+      auto e = pcap_geterr(pc);
+      Logger::err(errbuf);
       throw std::runtime_error{
-        pcap_geterr(pc)
+        e
       };
     }
     if (pcap_compile(pc, &fcode, config.filter.c_str(), 1, 0) < 0) {
+      auto e = pcap_geterr(pc);
+      Logger::err(errbuf);
       throw std::runtime_error{
-        pcap_geterr(pc)
+        e
       };
     }
     if (pcap_setfilter(pc, &fcode) < 0) {
-      throw std::runtime_error{
-        pcap_geterr(pc)
-      };
+      auto e = pcap_geterr(pc);
+      Logger::err(errbuf);
+      Logger::err("Malformed libpcap filter string");
 
+      throw std::runtime_error{
+        e
+      };
     }
     auto DataLink = pcap_datalink(pc);
     switch (DataLink) {
     default:
+      Logger::info("Unkown datalink type, defaulting to ethernet");
     case DLT_EN10MB:
+      Logger::info("Packet Encoding: Ethernet");
       IP_Offset = 14; //IP_Offset = sizeof(struct ether_header);
       break;
 #ifdef DLT_LINUX_SLL 
@@ -395,6 +408,7 @@ public:
       break;
 #endif
     case DLT_IEEE802:
+      Logger::info("Untested packet encoding: Token Ring");
       IP_Offset = 22;
       break;
     }
@@ -414,11 +428,7 @@ public:
       POLLIN,
       0x00
     };
-    std::cout << pfd.events << std::endl;
-    auto r = poll(&pfd, 1, 1000);
-    std::cout << "r: " << r << std::endl;
-    std::cout << pfd.revents << std::endl;
-    return r;
+    return poll(&pfd, 1, 1000);
   }
 
   auto IPV4Received(const pcap_pkthdr &, const ip& iheader, const std::string_view& ) {
@@ -451,19 +461,13 @@ public:
     const auto i6header = view.next_header<ip6_hdr>();
     
     if constexpr (M & Modes::NeedsIPv4) {
-      std::println("109");
       if (iheader.ip_v == 4) {
-        std::println("111");
-
         IPV4Received(header, iheader, packet);
         return;
       }
     }
     if constexpr (M & Modes::NeedsIPv6) {
-      std::println("115");
       if (i6header.ip6_ctlun.ip6_un2_vfc>>4 == 6) {
-        std::println("119");
-
         IPV6Received(header, i6header, packet);
         return;
       }
@@ -471,7 +475,6 @@ public:
   }
 
   auto Step() {
-    std::cout << "stepping\n";
     auto r = pcap_loop
       (
        pc, 1,
@@ -482,7 +485,6 @@ public:
          return self.PacketCallback(*header, packet);
        }, reinterpret_cast<u_char*>(this)
        );
-    std::cout << "stepped\n";
     return r;
   }
 

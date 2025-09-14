@@ -6,6 +6,11 @@ module stdio {
   export *
 }
 
+module date {
+  header "/usr/include/date/date.h"
+  export *
+}
+
 module time {
   header "/usr/include/sys/time.h"
   export *
@@ -48,7 +53,7 @@ module pybind11 {
   }
 }
 
-module pgxx {
+module pqxx {
   header "/usr/include/pqxx/pqxx"
   export *
 }
@@ -116,3 +121,10 @@ module signal {
   header "/usr/include/signal.h"
   export *
 }
+
+module syslog_h {
+    header "/usr/include/syslog.h"
+    export *
+}
+
+

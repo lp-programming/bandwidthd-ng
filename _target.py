@@ -9,12 +9,19 @@ class proc:
     def __init__(self, *args):
         self.args = args
 
+class func:
+    def __init__(self, f):
+        self.func = f
+
 class target(dict):
     common_args = []
     modes = dict(
         debug = [],
         release = []
     )
+    @property
+    def requirements(self):
+        return self.get("requirements", [])
     @property
     def virtual(self):
         return self.get("virtual", False)
@@ -23,11 +30,15 @@ class target(dict):
         yield "build.py"
         yield "_target.py"
         yield "targets.py"
+        yield "modules.map"
         yield from self.get("source")
     @property
     def deps(self):
-        for i in self.get('deps'):
+        for i in self.get('deps', []):
             yield i
+    @property
+    def targets(self):
+        return self.get("targets", [])
     def getArgs(self, mode="debug"):
         if 'cmd' in self:
             yield from self.cmd
@@ -49,6 +60,11 @@ class target(dict):
         if isinstance(i, glob):
             for p in pathlib.Path(i.path).glob(i.glob):
                 yield str(p)
+        elif isinstance(i, func):
+            for f in i.func():
+                if not isinstance(f, str):
+                    raise RuntimeError("Tried to get args from a faulty requirement function")
+                yield f
         elif isinstance(i, proc):
             p = subprocess.run(i.args, stdout = subprocess.PIPE, stdin = subprocess.PIPE)
             for o in p.stdout.decode('utf-8').split():

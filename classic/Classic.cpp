@@ -1,8 +1,11 @@
 import Postgres;
-import <map>;
+import BandwidthD;
+import <unordered_map>;
 import <vector>;
 import <utility>;
+import <chrono>;
 
+using namespace std::chrono_literals;
 template<typename CURSOR>
 class DatabaseWritingSensor: public Sensor<DatabaseWritingSensor<CURSOR>, Modes::BothDefault>  {
 public:
@@ -17,7 +20,7 @@ public:
   int Main() {
     for (;;) {
       const auto starttime = std::chrono::system_clock::now();
-      while (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - starttime).count() < static_cast<long long>(base.config.interval)) {
+      while ((std::chrono::system_clock::now() - starttime) < base.config.interval) {
         if (this->Poll()) {
           this->Step();
         }
@@ -34,39 +37,50 @@ public:
   } 
 };
 
-int Main(int argc, char **argv) {
+int Main(const uint argc, const char * const * const argv) {
   Config config{};
-  config.interval = 10;
+  config.interval = 10s;
+  config.syslog_prefix = "bandwidthd";
 
   const std::vector<std::string> args{argv, argv + argc};
-  std::string usage = std::format("Usage: {} --dev DEV [--filter FILTER] [--promiscuous BOOL] --subnet <CIDR> [--subnet <CIDR>...] [--notsubnet <CIDR>...] [--txrxsubnet <CIDR>...]", args.at(0));
   if (argc < 5 || !(argc % 2)) {
-    std::cerr << usage << std::endl << "Wrong number of args" << std::endl;
+    std::println("Usage: {} --dev DEV [--filter FILTER] [--promiscuous BOOL] --subnet <CIDR> [--subnet <CIDR>...] [--notsubnet <CIDR>...] [--txrxsubnet <CIDR>...]", args.at(0));
+    std::println("Wrong number of args");
     return 1;
   }
   
   config.dev = args.at(2);
   config.filter = "tcp";
 
-  for (auto i = 3; i < argc; i += 2) {
+  for (auto i = 3uz; i < argc; i += 2uz) {
     auto arg = args.at(i);
     if (arg == std::string{"--filter"}) {
-      config.filter = args.at(i + 1);
+      config.filter = args.at(i + 1uz);
     }
     else if (arg == std::string{"--promiscuous"}) {
-      config.promisc = args.at(i + 1) == "true";
+      config.promisc = args.at(i + 1uz) == "true";
     }
     else if (arg == std::string{"--subnet"}) {
-      config.subnets.emplace_back(args.at(i + 1));
+      auto& sn = config.subnets.emplace_back(args.at(i + 1uz));
+      //            syslog(LOG_INFO, "Monitoring subnet %s with netmask %s", inet_ntoa(addr), inet_ntoa(addr2));
+
+      Logger::info(std::format("Monitoring subnet {} with netmask {}",
+                               util::format_ip(sn.ip, sn.family),
+                               util::format_ip(sn.mask, sn.family)));
     }
     else if (arg == std::string{"--notsubnet"}) {
-      config.notsubnets.emplace_back(args.at(i + 1));
+      auto& sn = config.notsubnets.emplace_back(args.at(i + 1uz));
+      Logger::info(std::format("Ignoring subnet {} with netmask {}",
+                               util::format_ip(sn.ip, sn.family),
+                               util::format_ip(sn.mask, sn.family)));
     }
     else if (arg == std::string{"--txrxsubnet"}) {
-      config.txrxsubnets.emplace_back(args.at(i + 1));
+      auto& sn = config.txrxsubnets.emplace_back(args.at(i + 1uz));
+      Logger::info(std::format("Tracking subnet {} with netmask {}",
+                               util::format_ip(sn.ip, sn.family),
+                               util::format_ip(sn.mask, sn.family)));
     }
   }
-
 
   Cursor<PostgresDB> db{config};
   DatabaseWritingSensor<Cursor<PostgresDB>> sensor{config, db};
@@ -76,7 +90,7 @@ int Main(int argc, char **argv) {
 }
 
 extern "C" {
-  int main(int argc, char **argv) {
-    return Main(argc, argv);
+  int main(const int argc, const char * const * const argv) {
+    return Main(static_cast<const ssize_t>(argc), argv);
   }
 }

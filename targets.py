@@ -4,6 +4,9 @@ See _target.py for details on the target class
 
 """
 from _target import *
+from library_search import *
+
+PYLIB = f"lib/PyBandwidthD{find_python() or '.so'}"
 
 target.modes['release'] = [
     "-O3",
@@ -24,6 +27,7 @@ target.common_args = [
     "-fPIC",
     "-fimplicit-modules",
     "-fbuiltin-module-map",
+    "-fimplicit-module-maps",
     "-fmodule-map-file=/usr/include/c++/v1/module.modulemap",
     "-fmodule-map-file=./modules.map",
     "-fprebuilt-module-path=./build",
@@ -32,20 +36,29 @@ target.common_args = [
     "-Wold-style-cast",
     "-Wall",
     "-Wextra",
+    "-Wfloat-conversion",
+    "-Wsign-conversion",
+    "-Wsign-compare",
     "-Wpedantic"]
 
 targets = {
     "all": target({
         "source": None,
         "args": [],
-        "deps": ["core", "demo", "classic", "python"],
+        "targets": ["core", "demo", "classic", "python", "graph"],
+        "virtual": True
+    }),
+    "graph": target({
+        "source": None,
+        "args": [],
+        "deps": ["bin/graph"],
         "virtual": True
     }),
     "setup": target({
         "source": None,
         "args": [],
         "deps": [],
-        "cmd": ["mkdir", "-p", "bin", "lib", "build/databases"],
+        "cmd": ["mkdir", "-p", "bin", "lib", "build/databases", "build/graph"],
         "virtual": True
     }),
     "clean": target({
@@ -72,34 +85,48 @@ targets = {
     "python": target({
         "source": None,
         "args": [],
-        "deps": ["lib/PyBandwidthD.so"],
+        "deps": [PYLIB],
         "virtual": True
     }),
-    "lib/PyBandwidthD.so": target({
+    PYLIB: target({
         "source": ["python/PyBandwidthd.cppm"],
-        "args": ["-Wno-old-style-cast", "python/PyBandwidthd.cppm", "-o", "lib/PyBandwidthD.so", "-shared", glob("build/", "*.pcm"), "-lpcap", proc("python-config", "--includes"), proc("python-config", "--ldflags")],
+        "args": ["-Wno-old-style-cast", "python/PyBandwidthd.cppm", "-o", PYLIB, "-shared", glob("build/", "*.pcm"), "-lpcap", proc("python-config", "--includes", "--ldflags")],
+        "requirements": [find_python],
         "deps": ["core"]
     }),
     "classic": target({
         "source": None,
         "args": [],
         "deps": ["bin/bandwidthd"],
-        "virtual": True
+        "virtual": True,
     }),
     "bin/bandwidthd": target({
         "source": ["classic/Classic.cpp"],
-        "args": ["-fprebuilt-module-path=./build/databases", "classic/Classic.cpp", "-o", "bin/bandwidthd", glob("build/", "*.pcm"), "build/databases/Postgres.pcm", "-lpcap", "/usr/lib64/libpqxx.so", "/usr/lib64/libpq.so"],
+        "args": ["-fprebuilt-module-path=./build/databases", "classic/Classic.cpp", "-o", "bin/bandwidthd", glob("build/", "*.pcm"), "build/databases/Postgres.pcm", "-lpcap", func(find_pqxx)],
+        "requirements": [find_pqxx],
         "deps": ["core", "databases"]
+    }),
+    "bin/graph": target({
+        "source": ["graph/Graph.cpp"],
+        "args": ["-fprebuilt-module-path=./build/graph", "-fprebuilt-module-path=./build/databases", "graph/Graph.cpp", "-o", "bin/graph", glob("build/", "*.pcm"), "build/databases/Postgres.pcm", "build/graph/TrafficGraph.pcm", func(find_pqxx)],
+        "requirements": [find_pqxx],
+        "deps": ["core", "build/graph/TrafficGraph.pcm", "databases"]
     }),
     "databases": target({
         "source": None,
         "args": [],
-        "deps": ["build/databases/Postgres.pcm"],
+        "targets": ["build/databases/Postgres.pcm"],
         "virtual": True
+    }),
+    "build/graph/TrafficGraph.pcm": target({
+        "source": ["graph/TrafficGraph.cppm"],
+        "args": ["--precompile", "-o", "build/graph/TrafficGraph.pcm", "graph/TrafficGraph.cppm"],
+        "deps": ["core"] 
     }),
     "build/databases/Postgres.pcm": target({
         "source": ["databases/Postgres.cppm"],
         "args": ["--precompile", "-o", "build/databases/Postgres.pcm", "databases/Postgres.cppm"],
+        "requirements": [find_pqxx],
         "deps": ["core"],
     }),
     "demo": target({
@@ -111,7 +138,7 @@ targets = {
     "bin/demo": target({
         "source": ["demo/Demo.cpp"],
         "args": ["demo/Demo.cpp", "-o", "bin/demo", glob("build/", "*.pcm"), "-lpcap"],
-        "deps": ["core", "build/Types.pcm", "build/BandwidthD.pcm"]
+        "deps": ["core"]
     }),
     "core": target({
         "source": None,
@@ -127,7 +154,8 @@ targets = {
                  "build/Types.pcm",
                  "build/util.pcm",
                  "build/net_integer.pcm",
-                 "build/SyscallHelper.pcm"
+                 "build/SyscallHelper.pcm",
+                 "build/Syslog.pcm"
                 ]
     }),
     "build/Database.pcm": target({
@@ -143,6 +171,11 @@ targets = {
     "build/HeaderView.pcm": target({
         "source": ["core/HeaderView.cppm"],
         "args": ["--precompile", "-o", "build/HeaderView.pcm", "core/HeaderView.cppm"],
+        "deps": []
+    }),
+    "build/Syslog.pcm": target({
+        "source": ["core/Syslog.cppm"],
+        "args": ["--precompile", "-o", "build/Syslog.pcm", "core/Syslog.cppm"],
         "deps": []
     }),
     "build/net_integer.pcm": target({

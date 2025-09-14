@@ -8,6 +8,8 @@ import <sstream>;
 import <format>; 
 export import <sys/types.h>;
 export import <stdint.h>;
+export import <sys/socket.h>;
+
 export import net_integer;
 
 
@@ -74,6 +76,14 @@ namespace util {
                        );
   }
 
+  inline std::string format_ip(const net_u128 ip, const int family) {
+    if (family == AF_INET) {
+      return format_ipv4(ip);
+    }
+    else {
+      return format_ipv6(ip);
+    }
+  }
   inline std::string format_ip(const net_u32 ip) {
     return format_ipv4(ip);
   }

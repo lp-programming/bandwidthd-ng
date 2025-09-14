@@ -25,13 +25,13 @@ export using util::net_integer::parse_ipv6;
 
 export using util::net_integer::NetIntegerIP;
 
-constexpr uint128_t MAX_IPV6{static_cast<uint128_t>(__int128_t{-1})};
+using namespace std::chrono_literals;
 
-export constexpr uint32_t MINUTE{60};
-export constexpr uint32_t DAY{60*60*24};
-export constexpr uint32_t WEEK{DAY*7};
-export constexpr uint32_t MONTH{DAY*30};
-export constexpr uint32_t YEAR{DAY*365};
+export constexpr std::chrono::seconds MINUTE{60s};
+export constexpr std::chrono::seconds DAY{60*60*24s};
+export constexpr std::chrono::seconds WEEK{DAY*7};
+export constexpr std::chrono::seconds MONTH{DAY*30};
+export constexpr std::chrono::seconds YEAR{DAY*365};
 
 export class SubnetIdentifier {
 public:
@@ -42,14 +42,12 @@ public:
   inline constexpr bool contains(const net_u32 i) const {
     return contains(widen_ipv4(i));
   }
-
   
   inline constexpr bool contains(const net_u128 i) const {
     return (i & mask) == (ip & mask);
   }
   
   constexpr SubnetIdentifier() = default;
-
   constexpr SubnetIdentifier(const SubnetIdentifier&) = default;
   constexpr SubnetIdentifier(SubnetIdentifier&&) = default;
   constexpr SubnetIdentifier& operator=(const SubnetIdentifier&) = default;
@@ -77,7 +75,6 @@ private:
     uint128_t mask = bits == 0 ? 0 : (~__uint128_t(0) << (128 - bits));
     return net_u128::from_host(mask);
   }
-
   constexpr static net_u32 make_mask32(const int bits) {
     if (bits < 0 || bits > 32) {
       throw std::invalid_argument("Invalid IPv4 CIDR mask bits");
@@ -85,26 +82,20 @@ private:
     uint32_t mask = bits == 0 ? 0 : ~((1u << (32 - bits)) - 1);
     return net_u32::from_host(mask);
   }
-  
   constexpr static SubnetIdentifier parse_ipv4_cidr(std::string_view input) {
     size_t slash = input.find('/');
     if (slash == std::string_view::npos) {
       return SubnetIdentifier(parse_ipv4(input), make_mask32(32), AF_INET);
     }
-      
-
     auto ip_part = input.substr(0, slash);
     auto mask_part = input.substr(slash + 1);
-
     int bits = 0;
     auto [ptr, ec] = std::from_chars(mask_part.data(), mask_part.data() + mask_part.size(), bits);
     if (ec != std::errc{} || bits < 0 || bits > 32) {
       throw std::invalid_argument("Invalid IPv4 mask length");
     }
-
     net_u32 ip = parse_ipv4(ip_part);
     net_u32 mask = make_mask32(bits);
-
     return SubnetIdentifier{widen_ipv4(ip), widen_ipv4(mask), AF_INET};
   }
   
@@ -113,25 +104,18 @@ private:
     if (slash == std::string_view::npos) {
       return SubnetIdentifier(parse_ipv6(input), make_mask(128), AF_INET6);
     }
-
     auto ip_part = input.substr(0, slash);
     auto mask_part = input.substr(slash + 1);
-
     int bits = 0;
     auto [ptr, ec] = std::from_chars(mask_part.data(), mask_part.data() + mask_part.size(), bits);
     if (ec != std::errc{} || bits < 0 || bits > 128) {
       throw std::invalid_argument("Invalid IPv6 mask length");
     }
-
     net_u128 ip = parse_ipv6(ip_part);
     net_u128 mask = make_mask(bits);
-    
     return SubnetIdentifier{ip, mask, AF_INET6};
-   
   }
 };
-
-
 
 export class Config {
 public:
@@ -147,9 +131,9 @@ public:
   bool graph{false};
   uint32_t skip_intervals{0};
   uint64_t graph_cutoff{0};
-  uint64_t interval{200};
+  std::chrono::seconds interval{200s};
   
-  uint32_t meta_refresh{MINUTE};
+  std::chrono::seconds meta_refresh{MINUTE};
 
   std::string db_connect_string{};
   std::string sensor_name{};
@@ -161,9 +145,9 @@ public:
   std::vector<SubnetIdentifier> subnets{};
   std::vector<SubnetIdentifier> notsubnets{};
   std::vector<SubnetIdentifier> txrxsubnets{};
+
+  std::string syslog_prefix{};
 };
-
-
 
 export class Statistics {
 public:
@@ -187,23 +171,6 @@ public:
   Statistics Received;
 };
 
-
-export class SummaryData {
-public:
-  net_u128 IP;
-  bool Graphed;
-  uint128_t Total;
-  uint128_t TotalSent;
-  uint128_t TotalReceived;
-  uint128_t ICMP;
-  uint128_t UDP;
-  uint128_t TCP;
-  uint128_t FTP;
-  uint128_t HTTP;
-  uint128_t MAIL;
-  uint128_t P2P;
-};
-
 export 
 class VlanHeader {
 public:
@@ -211,5 +178,21 @@ public:
   u_int8_t  ether_shost[6];  /* source ether addr  */
   u_int8_t  ether_type[2];   /* packet type ID field */
   u_int8_t  vlan_tag[2];     /* vlan tag information */
+};
+
+export class SummaryData {
+public:
+  std::chrono::system_clock::time_point timestamp;
+  std::chrono::seconds sample_duration;
+  std::string net;
+  uint128_t total;
+  uint128_t icmp;
+  uint128_t udp;
+  uint128_t tcp;
+  uint128_t ftp;
+  uint128_t http;
+  uint128_t mail;
+  uint128_t p2p;
+  uint128_t count;
 };
 

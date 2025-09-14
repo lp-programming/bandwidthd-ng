@@ -12,11 +12,12 @@ import <format>;
 import <functional>;
 import <cstring>;
 import <netinet/in.h>;
-
+import <limits>;
 
 using std::uint16_t;
 using std::uint32_t;
 using uint128_t = __uint128_t;
+
 
 namespace util::net_integer {
   export
@@ -85,7 +86,7 @@ namespace util::net_integer {
     using value_type = T;
 
     // Default constructor
-    constexpr net_integer() = default;
+    constexpr net_integer() noexcept = default;
 
     // Constructor takes a network-order value (no swapping)
     constexpr net_integer(T network_order_value) : value(network_order_value) {}
@@ -146,9 +147,15 @@ namespace util::net_integer {
   export using net_u128 = net_integer<uint128_t>;
 
   constexpr uint8_t hex_char_to_val(char c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
-    if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+    if (c >= '0' && c <= '9') {
+      return static_cast<uint8_t>(c - '0');
+    }
+    if (c >= 'a' && c <= 'f') {
+      return static_cast<uint8_t>(10 + (c - 'a'));
+    }
+    if (c >= 'A' && c <= 'F') {
+      return static_cast<uint8_t>(10 + (c - 'A'));
+    }
     throw std::invalid_argument(std::format("Invalid hex digit: {}", c));
   }
 
@@ -168,7 +175,7 @@ namespace util::net_integer {
   export constexpr net_u32 parse_ipv4(std::string_view s) {
     std::array<uint8_t, 4> bytes{};
     size_t start = 0;
-    for (int i = 0; i < 4; ++i) {
+    for (uint8_t i = 0; i < 4; ++i) {
       auto end = s.find('.', start);
       if (end == std::string_view::npos && i < 3)
         throw std::invalid_argument("Invalid IPv4 format");
@@ -251,7 +258,6 @@ namespace util::net_integer {
     return net_u128::from_host(value);
 
   }
-
 }
 namespace util::net_integer::literal {
   // Numeric literal
@@ -276,9 +282,23 @@ namespace std {
 
   // Hash support
   template <NetIntSupported T>
-  struct std::hash<net_integer<T>> {
+  struct hash<net_integer<T>> {
+
+    constexpr hash<net_integer<T>>() noexcept = default;
+    
     size_t operator()(const net_integer<T>& k) const noexcept {
-      return std::hash<T>{}(k.net());
+      return hash<T>{}(k.net());
     }
   };
+
+  template <NetIntSupported T>
+  struct hash<pair<net_integer<T>, net_integer<T>>> {
+
+    constexpr hash<net_integer<T>,net_integer<T>>() noexcept = default;
+    
+    size_t operator()(const pair<net_integer<T>, net_integer<T>>& k) const noexcept {
+      return hash<T>{}((k.first.net()&std::numeric_limits<int32_t>::max()) << 32 + k.second.net()&std::numeric_limits<int32_t>::max() );
+    }
+  };
+
 }
