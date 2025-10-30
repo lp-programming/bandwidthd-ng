@@ -21,7 +21,6 @@ export using Logger = Syslog::Logger;
 
 namespace util {
   inline StatField GetSubProto(const net_u16 port) {
-    
     switch(port.host()) {
     case 110:
     case 25:
@@ -58,14 +57,14 @@ namespace util {
     }
     return nullptr;
   }
-  template <NetIntegerIP N>
+  template <int Family, NetIntegerIP N>
   inline std::pair<bool, bool> _is_allowed(const N srcip, const N dstip, const Config& cfg) {
     bool src_ok{false};
     bool dst_ok{false};
     
     for (const auto& s : cfg.subnets) {
-      src_ok |= s.contains(srcip);
-      dst_ok |= s.contains(dstip);
+      src_ok |= (s.family == Family) && s.contains(srcip);
+      dst_ok |= (s.family == Family) && s.contains(dstip);
       if (src_ok && dst_ok) {
         break;
       }
@@ -73,8 +72,8 @@ namespace util {
 
     if (src_ok || dst_ok) {
       for (const auto& s : cfg.notsubnets) {
-        src_ok &= s.contains(srcip);
-        dst_ok &= s.contains(dstip);
+        src_ok &= !(s.family == Family && s.contains(srcip));
+        dst_ok &= !(s.family == Family && s.contains(dstip));
         if (!(src_ok || dst_ok)) {
           break;
         }
@@ -122,10 +121,12 @@ public:
   std::unordered_map<net_u128, IPData> ips6{};
   std::unordered_map<std::pair<net_u128,net_u128>, Statistics> txrx6{};
 public:  
-  void ProcessIPv6(const std::string&, const std::string&, const net_u128 src, const net_u128 dst, const uint16_t length, const ip6_hdr& iheader) {
+  void ProcessIPv6(const uint16_t length, const ip6_hdr& iheader, HeaderView& view) {
     const Config& cfg = static_cast<const BD&>(*this).config;
+    auto src = static_cast<net_u128>(iheader.ip6_src);
+    auto dst = static_cast<net_u128>(iheader.ip6_dst);
 
-    auto [src_allowed, dst_allowed] = util::_is_allowed(src, dst, cfg);
+    auto [src_allowed, dst_allowed] = util::_is_allowed<AF_INET6>(src, dst, cfg);
     bool txrx_allowed{false};
     for (const auto& sn: cfg.txrxsubnets) {
       if (sn.contains(src) || sn.contains(dst)) {
@@ -139,25 +140,42 @@ public:
     }
     StatField proto = nullptr;
     StatField subproto = nullptr;
-    switch (iheader.ip6_ctlun.ip6_un1.ip6_un1_nxt) {
-    case 1:
-      proto = &Statistics::icmp;
-      break;
-    case 6:
-      {
-        proto = &Statistics::tcp;
-        auto tcp = reinterpret_cast<const tcphdr&>(*(&iheader+sizeof(ip6_hdr)));
-        subproto = util::GetSubProto(static_cast<net_u16>(tcp.th_sport));
-        if (subproto == nullptr) {
-          subproto = util::GetSubProto(static_cast<net_u16>(tcp.th_dport));
+    uint8_t next = iheader.ip6_ctlun.ip6_un1.ip6_un1_nxt;
+    view.skip_forward(sizeof(ip6_hdr));
+    while (true) {
+      switch (next) {
+      default:
+        {
+          const ip6_ext& ext = view.peek_header<ip6_ext>();
+          next = ext.ip6e_nxt;
+          view.skip_forward((ext.ip6e_len + 1) * 8);
+          continue;
+        }
+      case IPPROTO_ICMPV6:
+        {
+          proto = &Statistics::icmp;
+          break;
+        }
+      case IPPROTO_TCP:
+        {
+          proto = &Statistics::tcp;
+          const auto& tcp = view.next_header<tcphdr>();
+
+          subproto = util::GetSubProto(static_cast<net_u16>(tcp.th_sport));
+          if (subproto == nullptr) {
+            subproto = util::GetSubProto(static_cast<net_u16>(tcp.th_dport));
+          }
+          break;
+        }
+      case IPPROTO_UDP:
+        {
+
+          proto = &Statistics::udp;
+          break;
         }
       }
       break;
-    case 17:
-      proto = &Statistics::udp;
-      break;
     }
-
     if (src_allowed) {
       auto& rec = ips6[src].Sent;
       rec.packet_count++;
@@ -201,10 +219,12 @@ class IPv4DefaultMixin {
 public:
   std::unordered_map<net_u32, IPData> ips{};
   std::unordered_map<std::pair<net_u32,net_u32>, Statistics> txrx{};
-  void ProcessIPv4(const std::string&, const std::string&, const net_u32 src, const net_u32 dst, const uint16_t length, const ip& iheader) {
+  void ProcessIPv4(const uint16_t length, const ip& iheader, HeaderView& view) {
     const Config& cfg = static_cast<const BD&>(*this).config;
+    const net_u32 src = static_cast<net_u32>(iheader.ip_src.s_addr);
+    const net_u32 dst = static_cast<net_u32>(iheader.ip_dst.s_addr);
 
-    auto [src_allowed, dst_allowed] = util::_is_allowed(src, dst, cfg);
+    auto [src_allowed, dst_allowed] = util::_is_allowed<AF_INET>(src, dst, cfg);
     bool txrx_allowed{false};
     for (const auto& sn: cfg.txrxsubnets) {
       if (sn.contains(src) || sn.contains(dst)) {
@@ -219,20 +239,22 @@ public:
     StatField proto = nullptr;
     StatField subproto = nullptr;
     switch (iheader.ip_p) {
-    case 1:
+    case IPPROTO_ICMP:
       proto = &Statistics::icmp;
       break;
-    case 6:
+    case IPPROTO_TCP:
       {
         proto = &Statistics::tcp;
-        auto tcp = reinterpret_cast<const tcphdr&>(*(&iheader+sizeof(ip)));
+        view.skip_forward(iheader.ip_hl * 4);
+        const tcphdr& tcp = view.next_header<tcphdr>();
+        
         subproto = util::GetSubProto(static_cast<net_u16>(tcp.th_sport));
         if (subproto == nullptr) {
           subproto = util::GetSubProto(static_cast<net_u16>(tcp.th_dport));
         }
       }
       break;
-    case 17:
+    case IPPROTO_UDP:
       proto = &Statistics::udp;
       break;      
     }
@@ -292,7 +314,7 @@ using IPv6Mixin = std::conditional_t<
 template <typename T>
 concept HasIPv4Processor = requires {
     { &T::ProcessIPv4 } -> std::same_as<
-      void (T::*)(const std::string&, const std::string&, const net_u32, const net_u32, const uint16_t, const ip&)
+      void (T::*)(const uint16_t, const ip&, HeaderView&)
     >;
 };
 
@@ -300,7 +322,7 @@ concept HasIPv4Processor = requires {
 template <typename T>
 concept HasIPv6Processor = requires {
     { &T::ProcessIPv6 } -> std::same_as<
-      void (T::*)(const std::string&, const std::string&, const net_u128, const net_u128, const uint16_t, const ip6_hdr&)
+      void (T::*)(const uint16_t, const ip6_hdr&, HeaderView&)
     >;
 };
 
@@ -431,58 +453,69 @@ public:
     return poll(&pfd, 1, 1000);
   }
 
-  auto IPV4Received(const pcap_pkthdr &, const ip& iheader, const std::string_view& ) {
-    auto sip = static_cast<net_u32>(iheader.ip_src.s_addr);
-    auto dip = static_cast<net_u32>(iheader.ip_dst.s_addr);
-    std::string srcip{util::format_ipv4(sip)};
-    std::string dstip{util::format_ipv4(dip)};
-
-    self.ProcessIPv4(srcip, dstip, sip, dip, static_cast<net_u16>(iheader.ip_len).host(), iheader);
+  auto IPV4Received(const pcap_pkthdr &, const ip& iheader, HeaderView& view ) {
+    self.ProcessIPv4(static_cast<net_u16>(iheader.ip_len).host(), iheader, view);
   }
 
-  auto IPV6Received(const pcap_pkthdr &, const ip6_hdr& iheader, const std::string_view& ) {
-    auto sip = static_cast<net_u128>(iheader.ip6_src);
-    auto dip = static_cast<net_u128>(iheader.ip6_dst);
-    std::string srcip{util::format_ipv6(sip)};
-    std::string dstip{util::format_ipv6(dip)};
-
-    self.ProcessIPv6(srcip, dstip, sip, dip, static_cast<net_u16>(iheader.ip6_ctlun.ip6_un1.ip6_un1_plen).host(), iheader);
+  auto IPV6Received(const pcap_pkthdr &, const ip6_hdr& iheader, HeaderView& view ) {
+    self.ProcessIPv6(static_cast<net_u16>(iheader.ip6_ctlun.ip6_un1.ip6_un1_plen).host(), iheader, view);
   }
 
   auto PacketCallback(const pcap_pkthdr &header, const std::string_view packet) {
     HeaderView view{packet};
-    const auto vlanhdr = view.peek_header<VlanHeader>();
+    const auto& vlanhdr = view.peek_header<VlanHeader>();
     if (vlanhdr.ether_type[0] == 0x81 && vlanhdr.ether_type[1] == 0x00) {
       view.skip_forward(4);
     }
 
     view.skip_forward(IP_Offset);
-    const auto iheader = view.peek_header<ip>();
-    const auto i6header = view.next_header<ip6_hdr>();
+    
+    
     
     if constexpr (M & Modes::NeedsIPv4) {
+      const auto& iheader = view.peek_header<ip>();
       if (iheader.ip_v == 4) {
-        IPV4Received(header, iheader, packet);
+        IPV4Received(header, iheader, view);
         return;
       }
     }
     if constexpr (M & Modes::NeedsIPv6) {
+      const auto& i6header = view.peek_header<ip6_hdr>();
       if (i6header.ip6_ctlun.ip6_un2_vfc>>4 == 6) {
-        IPV6Received(header, i6header, packet);
+        IPV6Received(header, i6header, view);
         return;
       }
     }
   }
 
+  static std::string hex_encode(const auto m, const auto bytes) {
+    std::string r{};
+    for (size_t i = 0; i < m; ++i) {
+      r+=std::format("{:02x}", bytes[i]);
+    }
+    return r;
+  }
   auto Step() {
-    auto r = pcap_loop
+    auto r = pcap_dispatch
       (
-       pc, 1,
+       pc, -1,
        [](u_char *user, const pcap_pkthdr *header, const u_char *bytes)
        {
          const std::string_view packet{reinterpret_cast<const char*>(bytes), header->caplen};
+         if (header->caplen < 28) {
+           std::println("discarding small packet fragment: {} bytes", header->caplen);
+           std::println("hex: {}", hex_encode(header->caplen, bytes));
+           return;
+         }
          BD& self = *reinterpret_cast<BD*>(user);
-         return self.PacketCallback(*header, packet);
+         try {
+           return self.PacketCallback(*header, packet);
+         }
+         catch(std::out_of_range& e) {
+           std::println("got packet of {} bytes, which contained malformed headers", header->caplen);
+           std::println("hex: {}", hex_encode(header->caplen, bytes));
+         
+         }
        }, reinterpret_cast<u_char*>(this)
        );
     return r;

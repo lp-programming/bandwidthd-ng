@@ -11,10 +11,15 @@ namespace EnumFlags {
     using underlying = std::underlying_type_t<F>;
     //typedef typename std::underlying_type<F>::type underlying;
     public:
-    const F flags;
+    F flags;
     constexpr FlagSet(const FlagSet<F> &other): flags(other.flags) {
       
     }
+
+    constexpr FlagSet& operator=(const FlagSet& other) noexcept = default;
+    constexpr FlagSet& operator=(FlagSet&& other) noexcept = default;
+
+    
     constexpr FlagSet(F f) : flags(f) {}
     constexpr FlagSet() : flags(static_cast<F>(0)) {}
     constexpr inline FlagSet<F> const operator|(F other) const {

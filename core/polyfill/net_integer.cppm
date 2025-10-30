@@ -14,10 +14,10 @@ import <cstring>;
 import <netinet/in.h>;
 import <limits>;
 
+import uint128_t;
+
 using std::uint16_t;
 using std::uint32_t;
-using uint128_t = __uint128_t;
-
 
 namespace util::net_integer {
   export

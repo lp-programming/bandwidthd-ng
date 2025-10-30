@@ -6,16 +6,20 @@ import pathlib
 import hashlib
 import time
 import enum
+import argparse
 
-from targets import targets
+sys.dont_write_bytecode = True
+
+from ._target import *
+
 
 STATUS_FILE = pathlib.Path("status.json")
 
 if STATUS_FILE.exists():
     with STATUS_FILE.open("r", encoding="utf-8") as r:
-        status = json.load(r)
+        meta_status = json.load(r)
 else:
-    status = {}
+    meta_status = {}
 
 def system(args):
     return subprocess.Popen(args, stdin=subprocess.PIPE)
@@ -30,9 +34,19 @@ class State(enum.Enum):
 
 class Task:
     building = 0
+    maxParallel = 0
+    totalBuilt = 0
     limit = 1
     state = State.default
     globalState = State.default
+    @classmethod
+    def markStarted(cls):
+        cls.building += 1
+        cls.maxParallel = max(cls.building, cls.maxParallel)
+    @classmethod
+    def markCompleted(cls):
+        cls.building -= 1
+        cls.totalBuilt += 1
     def __init__(self, t):
         self.proc = None
         self.target = t
@@ -49,7 +63,7 @@ class Task:
         r = self.proc.poll()
         if r is not None:
             if self.state is State.pending:
-                Task.building -= 1
+                self.markCompleted()
             if r:
                 print("Failure running",self)
                 print(str.join(' ', [repr(i) for i in self.args]))
@@ -67,13 +81,19 @@ class Task:
         if self.globalState is State.failure:
             self.state = State.failure
             return False
-        print("building:",self)
+        print("building:", self)
         if self.state is not State.default:
             print("Trying to start already started task", self)
             return False
-        Task.building += 1
+        self.markStarted()
         self.state = State.pending
-        args = list(self.target.getArgs())
+        if self.target.function:
+            if self.target.function(self.target):
+                args = ['true']
+            else:
+                args = ['false']
+        else:
+            args = list(self.target.getArgs())
         self.args = args
         self.proc = system(args)
         if self.target.name == "clean":
@@ -116,6 +136,9 @@ class Target:
         return f"<Target: {self.name}, {self.state}>"
     __repr__ = __str__
     @property
+    def function(self):
+        return self.__target.get('function', None)
+    @property
     def sha(self):
         if self.__target.virtual:
             return None
@@ -125,6 +148,11 @@ class Target:
             if s.exists():
                 with s.open("rb") as f:
                     sha = hashlib.sha256(sha + f.read()).hexdigest().encode('utf-8')
+        if not self.function:
+            args = str.join(' ', self.getArgs()).encode('utf-8')
+            sha = hashlib.sha256(sha + args).hexdigest().encode('utf-8')
+        if h := self.__target.get('hash'):
+            sha = hashlib.sha256(sha + h.encode('utf-8')).hexdigest().encode('utf-8')
         return sha.decode('utf-8')
     def poll(self):
         if self.state is State.skipped or self.state is State.rebuilt:
@@ -173,13 +201,16 @@ class Target:
             return self
         self.mode = mode
         print("prebuild:", self)
+        if su := getattr(self.__target, "setup", None):
+            su()
+        
         for r in self.__target.requirements:
             if not r():
                 print("Not building",self,"due to missing dep")
                 self.state = State.missing
                 return self
         if self.__target.virtual:
-            rebuild = bool(list(self.__target.cmd))
+            rebuild = bool(list(self.__target.cmd)) or bool(self.__target.get('function', None))
         else:
             rebuild = status.get(self.name, None) != self.sha
         self.pending = []
@@ -209,27 +240,90 @@ class Target:
     def getArgs(self):
         return self.__target.getArgs(self.mode)
 
-def main(argv = sys.argv):
-    if '-m' in argv:
-        i = argv.index('-m')
-        mode = argv[i + 1]
-        argv.pop(i + 1)
-        argv.pop(i)
-    else:
-        mode = "debug"
-    if '-j' in argv:
-        i = argv.index('-j')
-        if len(argv) > i + 1 and argv[i + 1].isdigit():
-            Task.limit = int(argv[i + 1])
-            argv.pop(i + 1)
-        else:
-            Task.limit = os.cpu_count()
-        argv.pop(i)
         
-    if len(argv) < 2:
-        build_targets = ["setup", "all"]
+def main(argv = sys.argv):
+    global targets
+    if "-j" in argv:
+        jidx = argv.index('-j')
+        if jidx < len(argv) - 1:
+            if not argv[jidx + 1].isdigit():
+                argv.insert(jidx + 1, str(os.cpu_count()))
+    if '--' in argv:
+        argv.remove('--')
+
+    if "help" in argv:
+        argv.append("--help")
+        argv.append("-q")
+
+    argv = [(('--'+i) if '=' in i and not i.startswith('--') else i )for i in argv]
+
+    parser = argparse.ArgumentParser(prog="pybuild", description="Run the pybuild build tool")
+    parser.add_argument("-j", "--jobs", type=int, nargs='?', default=1, const=os.cpu_count(),
+                        help="number of parallel jobs to use")
+    parser.add_argument("--verbose", "-v", action="store_true",
+                        help="enable verbose output")
+    parser.add_argument("-m", "--mode", default="debug",
+                    help="build mode (default: debug)")
+    parser.add_argument("--prefix", type=pathlib.Path, default=pathlib.Path("/usr/local/"), help="installation prefix")
+    parser.add_argument("--build", type=pathlib.Path, default=pathlib.Path("build"), help="build directory")
+    parser.add_argument("--project", type=str, default=".", help="project directory")
+    parser.add_argument("-p", "--print", action="store_true", help="enable printing")
+    parser.add_argument("-q", action="store_true", dest="quit", help="quit without building")
+    parser.add_argument("--jobserver-auth", help=argparse.SUPPRESS)
+
+    args, rest = parser.parse_known_intermixed_args(argv[1:])
+    
+    mode = args.mode
+
+    project = args.project
+    
+    Task.limit = args.jobs
+
+    target.prefix = args.prefix
+
+    target.build = args.build
+    
+    target.project = pathlib.Path(args.project)
+
+    sys.path.insert(0, project)
+    from targets import targets
+    sys.path.pop(0)
+    if "targets" in rest or "tasks" in rest:
+        a = targets["all"]
+        print("The following top level targets are defined: \n\n")
+        print("all: ", a.get("doc"), "\n")
+        for d in a['deps']:
+            print(d, targets[d].get("doc"), sep=': ', end="\n\n")
+            
+        for d in a['targets']:
+            print(d, targets[d].get("doc"), sep=': ', end="\n\n")
+        print("clean: remove most build artifacts\n")
+        print("moduleclean: remove module cache, too\n")
+        print("distclean: remove everything not tracked by git")
+        return 0;
+
+    if args.print:
+        from pprint import pprint
+        pprint(targets)
+    if args.quit:
+        raise SystemExit(1)
+
+    if "setup" in targets:
+        setup = ["setup"]
     else:
-        build_targets = ["setup", *argv[1:]]
+        setup = []
+        
+    if len(rest) < 1:
+        build_targets = [*setup, "all"]
+    else:
+        build_targets = [*setup, *rest]
+
+    global status
+    if (mstatus := meta_status.get(str(target.build), None)) is None:
+        meta_status[str(target.build)] = mstatus = {}
+        
+    if (status := mstatus.get(mode, None)) is None:
+        mstatus[mode] = status = {}
 
     ec = 0
     building = [Target(target).prebuild(mode) for target in build_targets]
@@ -238,10 +332,15 @@ def main(argv = sys.argv):
         ec |= b.poll()
 
     Target.syncState()
-        
+
+
+    json_status = json.dumps(meta_status)
     with STATUS_FILE.open("w", encoding="utf-8") as f:
-        json.dump(obj=status, fp=f)
-    raise SystemExit(ec)
+        print(json_status, file=f)
+
+    print(f"done building {Task.totalBuilt} jobs, using max", Task.maxParallel, "workers")
+        
+    return ec
 
         
 if __name__ == "__main__":

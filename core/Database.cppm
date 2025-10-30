@@ -2,13 +2,14 @@ module;
 export module Database;
 export import BandwidthD;
 export import Types;
-export import <chrono>;
-export import <exception>;
+import uint128_t;
+import <chrono>;
+import <exception>;
 import <sstream>;
 import <iomanip>;    // for std::get_time
 import <ctime>;      // for std::tm, std::mktime
+import <typeinfo>;
 
-export typedef __uint128_t uint128_t ;
 
 export 
 template<typename CONN>
@@ -16,9 +17,19 @@ class Cursor : public CONN {
 public:
   int sensor_id{};
   CONN& connection;
+  std::array<typename CONN::prepared_t, 3> statements;
+  
 
-  Cursor(Config& config): CONN(config), connection(*this){
+  Cursor(Config& config): CONN(config), connection(*this), statements(prepare_statements()){
     validate();
+  }
+
+  std::array<typename CONN::prepared_t, 3> prepare_statements() {
+    return {
+      connection.prepare("INSERT INTO bd_tx_log values ($$, $$, $$, $now, $$, $$, $$, $$, $$, $$, $$, $$, $$, $$);"),
+      connection.prepare("INSERT INTO bd_rx_log values ($$, $$, $$, $now, $$, $$, $$, $$, $$, $$, $$, $$, $$, $$);"),
+      connection.prepare("INSERT INTO bd_tx_rx_log values ($$, $$, $$, $$, $now, $$, $$, $$, $$, $$, $$, $$, $$, $$, $$);"),
+    };
   }
 
   void validate() {
@@ -33,9 +44,10 @@ public:
     
   }
 
-  void SerializeData(const auto& IPs, const auto& both, const std::chrono::seconds duration) {
+  void SerializeData(this auto& self, const auto& IPs, const auto& both, const std::chrono::seconds duration, const auto now) {
     auto d = duration.count();
-    auto txn = connection.begin();
+    auto txn = self.connection.begin();
+    std::string timestamp = std::format("{:%Y-%m-%d %H:%M:%S}", std::chrono::floor<std::chrono::seconds>(now));
     for (const auto& entry : IPs) {
       const auto &ip = entry.first;
       const auto &data = entry.second;
@@ -43,8 +55,9 @@ public:
       const auto &recv = data.Received;
       const auto &label = data.label;
       const std::string strip = util::format_ip(ip);
-      txn.exec("INSERT INTO bd_tx_log values ($1, $2, $3, now(), $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);", {sensor_id, label, strip, d, sent.packet_count, sent.total, sent.icmp, sent.udp, sent.tcp, sent.ftp, sent.http, sent.mail, sent.p2p});
-      txn.exec("INSERT INTO bd_rx_log values ($1, $2, $3, now(), $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);", {sensor_id, label, strip, d, recv.packet_count, recv.total, recv.icmp, recv.udp, recv.tcp, recv.ftp, recv.http, recv.mail, recv.p2p});
+
+      txn.exec(self.statements[0], typename CONN::params{self.sensor_id, label, strip, timestamp, d, sent.packet_count, sent.total, sent.icmp, sent.udp, sent.tcp, sent.ftp, sent.http, sent.mail, sent.p2p});
+      txn.exec(self.statements[1], typename CONN::params{self.sensor_id, label, strip, timestamp, d, recv.packet_count, recv.total, recv.icmp, recv.udp, recv.tcp, recv.ftp, recv.http, recv.mail, recv.p2p});
     }
 
 
@@ -56,13 +69,13 @@ public:
       const std::string strsrcip = util::format_ip(srcip);
       const std::string strdstip = util::format_ip(dstip);
             
-      txn.exec("INSERT INTO bd_tx_rx_log values ($1, $2, $3, $4, now(), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14);", {sensor_id, data.label, strsrcip, strdstip, d, data.packet_count, data.total, data.icmp, data.udp, data.tcp, data.ftp, data.http, data.mail, data.p2p});
+      txn.exec(self.statements[2], typename CONN::params{self.sensor_id, data.label, strsrcip, strdstip, timestamp, d, data.packet_count, data.total, data.icmp, data.udp, data.tcp, data.ftp, data.http, data.mail, data.p2p});
     }
 
     txn.commit();
   }
 
-  const std::vector<SummaryData> GetData(const std::string_view start,
+  std::vector<SummaryData> GetData(const std::string_view start,
                                    const std::string_view end,
                                    bool relative_start,
                                    bool relative_end,
@@ -97,7 +110,8 @@ public:
       std::time_t time = std::mktime(&tm);
       d.timestamp = std::chrono::system_clock::from_time_t(time);
 
-      //d.sample_duration = row["sample_duration"];
+      auto sd = row["sample_duration"].template as<int64_t>();
+      d.sample_duration = std::chrono::seconds(sd);
       d.net = sn;
       d.total = row[2].template as<uint64_t>();
       d.icmp = row["icmp"].template as<uint64_t>();
@@ -111,5 +125,8 @@ public:
     }
     return data;
   }
+
+
+  
 };
 

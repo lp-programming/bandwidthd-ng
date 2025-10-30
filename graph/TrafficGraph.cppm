@@ -1,208 +1,204 @@
 export module TrafficGraph;
-
-export import <string>;
-export import <vector>;
-export import <unordered_map>;
-export import <chrono>;
-export import <sstream>;
-export import <iomanip>;
-export import <concepts>;
-export import <algorithm>;
-export import <format>;
-export import <print>;
-export import <numeric>;
 export import Types;
+
+import <string>;
+import <vector>;
+import <unordered_map>;
+import <chrono>;
+import <sstream>;
+import <iomanip>;
+import <concepts>;
+import <algorithm>;
+import <format>;
+import <print>;
+import <numeric>;
+import static_for;
+export import <array>;
 
 static constexpr const char* COLOR_ICMP = "#FF0000";   // Red
 static constexpr const char* COLOR_UDP = "#800000";    // Brown
 static constexpr const char* COLOR_TCP = "#00FF00";    // Green
-//static constexpr const char* COLOR_P2P = "#008000";    // Dark Green
+static constexpr const char* COLOR_P2P = "#008000";    // Dark Green
 static constexpr const char* COLOR_HTTP = "#0000FF";   // Blue
 static constexpr const char* COLOR_MAIL = "#800080";   // Purple
 static constexpr const char* COLOR_FTP = "#FF8000";    // Orange
-static constexpr const char* COLOR_TOTAL = "#000000";  // Black
+//static constexpr const char* COLOR_TOTAL = "#F0F0F0";  // GREY
 
-class AggregateData : public SummaryData {
-public:
-  uint32_t samples{0};
+static constexpr const char* PATH_START = "<path fill='{}' opacity='0.7' stroke-width='0' d='";
 
-  inline void normalize() {
-    if (!samples) {
-      return;
-    }
-    total /= samples;
-    icmp /= samples;
-    udp /= samples;
-    tcp /= samples;
-    ftp /= samples;
-    http /= samples;
-    mail /= samples;
-    p2p /= samples;
-    count /= samples;
-    samples = 1;
-  }
-
-  inline void operator<<(const SummaryData& rhs) {
-    total += rhs.total;
-    icmp += rhs.icmp;
-    udp += rhs.udp;
-    tcp += rhs.tcp;
-    ftp += rhs.ftp;
-    http += rhs.http;
-    mail += rhs.mail;
-    p2p += rhs.p2p;
-    count += rhs.count;
-    samples++;
-  }
-
+struct GraphConfig {
+  const int width;
+  const int height;
+  const int left_margin;
+  const int top_margin;
+  const int bottom_margin;
+  const int right_margin;
+  
+  const double y_padding = 1.05;
 };
 
+namespace {
+  struct Layer {
+    const std::string_view name;
+    const std::string_view color;
+    uint64_t SummaryData::* field;
+  };
+  constexpr std::array<Layer, 7> layers{
+    Layer{ "icmp", COLOR_ICMP, &SummaryData::icmp },
+    Layer{ "udp",  COLOR_UDP,  &SummaryData::udp  },
+    Layer{ "tcp",  COLOR_TCP,  &SummaryData::tcp  },
+    Layer{ "ftp",  COLOR_FTP,  &SummaryData::ftp  },
+    Layer{ "http", COLOR_HTTP, &SummaryData::http },
+    Layer{ "mail", COLOR_MAIL, &SummaryData::mail },
+    Layer{ "p2p",  COLOR_P2P,  &SummaryData::p2p  },
+  };
+
+}
+
+
+template <typename DATA, std::size_t N>
+constexpr const auto& get_unit(const DATA& d) {
+    if constexpr (requires { get<N>(d); }) {
+        return get<N>(d);
+    } else {
+        static_assert(N == 0, "Non-tuple data supports only index 0");
+        return d;
+    }
+}
+
+template <typename DATA, std::size_t N>
+constexpr auto& get_unit(DATA& d) {
+    if constexpr (requires { get<N>(d); }) {
+        return get<N>(d);
+    } else {
+        static_assert(N == 0, "Non-tuple data supports only index 0");
+        return d;
+    }
+}
+
+template <typename DATA>
+consteval std::size_t data_size_v() {
+  if constexpr (requires { std::tuple_size<DATA>(); }) {
+    return std::tuple_size_v<DATA>;
+  }
+  else {
+    return 1;
+  }
+}
 
 
 export
 class TrafficGraph {
-private:
-  int width;
-  int height;
-  int yoffset;
-  std::map<uint64_t, AggregateData> samples_by_x;
-
-  double y_max = 1.0;
-  double peak_rate = 0.0;
-  double total_sum = 0.0;
-
+  const GraphConfig cfg;
+  double graph_height;
 public:
-  TrafficGraph(int width, int height, int yoffset)
-    : width(width), height(height), yoffset(yoffset) {}
-
-  std::string render(const std::vector<SummaryData>& data_rows,
-                     const std::chrono::system_clock::time_point start_time,
-                     const std::chrono::system_clock::time_point end_time) {
-    aggregateSamples(data_rows, start_time, end_time);
-    computeMaxAndPeak();
-    return buildSVG(start_time, end_time);
-  }
-
-private:
-
-  void clear() {
-    samples_by_x.clear();
-    y_max = 1.0;
-    peak_rate = 0.0;
-    total_sum = 0.0;
-  }
-
-  void aggregateSamples(const std::vector<SummaryData>& data_rows,
-                        const std::chrono::system_clock::time_point start_time,
-                        const std::chrono::system_clock::time_point end_time) {
+  TrafficGraph(const GraphConfig& c) : cfg(c), graph_height(cfg.height - cfg.top_margin - cfg.bottom_margin) {}
+  template<typename DATA>
+  auto render(std::vector<DATA>& data_rows,
+              const std::chrono::system_clock::time_point start_time,
+              const std::chrono::system_clock::time_point end_time) {
     using namespace std::chrono;
 
-    clear();
-    for (const auto& row : data_rows) {
-      if (row.timestamp < start_time || row.timestamp > end_time) {
-        continue;
-      }
+    const auto row_count = data_rows.size();
+    constexpr std::size_t N = data_size_v<DATA>();
 
-      uint64_t x = timestampToX(row.timestamp, start_time, end_time);
-      samples_by_x[x] << row;
+    std::array<std::vector<std::string>, N> svgs{};
+    std::array<SummaryData, N> peak{};
+    std::array<SummaryData, N> total{};
+
+    SummaryData peak_peak{};
+
+    for (DATA& row : data_rows) {
+      static_for<N>([&]<std::size_t n>(std::integral_constant<std::size_t, n>) {
+          auto& t = total[n];
+          auto& p = peak[n];
+          auto& r = get_unit<DATA,n>(row);
+          if (r.timestamp < start_time || r.timestamp > end_time) {
+            return;
+          }
+          std::println("total: {}", r.total);
+          t += r;
+          r.normalize();
+          std::println("rate: {}", r.total);
+          std::println("peak: {}", p.total);
+          p << r;
+          std::println("new peak: {}", p.total);
+          peak_peak << r;
+        });
     }
-  }
 
-  void computeMaxAndPeak() {
-    y_max = 0;
-    peak_rate = 0;
-    total_sum = 0;
+    static_for<N>([&]<std::size_t n>(std::integral_constant<std::size_t, n>) {
+        svgs[n].reserve(76 + row_count * 4);
+      });
 
-    for (auto& [x, sample] : samples_by_x) {
-      sample.normalize();
-      if (sample.total > peak_rate) {
-        peak_rate = sample.total;
-      }
-      total_sum += sample.total;
-      if (sample.total > y_max) {
-        y_max = sample.total;
-      }
-    }
-
-    y_max *= 1.05; // 5% headroom
+    double y_max{peak_peak.total * cfg.y_padding};
     if (y_max < 1.0) {
-      y_max = 1.0;
+      std::println("has no sent?");
+      y_max = 1;
+    }
+
+    static_for<N>([&]<std::size_t n>(std::integral_constant<std::size_t, n>) {
+        write_header(svgs[n], start_time, end_time, y_max);
+      });
+
+    drawStackedLines(data_rows, svgs, start_time, end_time, y_max);
+
+    static_for<N>([&]<std::size_t n>(std::integral_constant<std::size_t, n>) {
+        drawLabels(svgs[n], end_time - start_time, peak[n], total[n]);
+        svgs[n].push_back("</svg>\n");
+      });
+
+    if constexpr (N == 1) {
+      return util::string_join("", svgs[0]);
+    }
+    else {
+      return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+        return std::tuple<decltype(util::string_join("", svgs[Is]))...>{ util::string_join("", svgs[Is])... };
+      }(std::make_index_sequence<N>{});
+
     }
   }
 
-  uint64_t timestampToX(const std::chrono::system_clock::time_point ts,
-                   const std::chrono::system_clock::time_point start,
-                   const std::chrono::system_clock::time_point end) const {
-    using namespace std::chrono;
-    double ratio = double(duration_cast<milliseconds>(ts - start).count()) /
-      double(duration_cast<milliseconds>(end - start).count());
-    ratio = std::clamp(ratio, 0.0, 1.0);
-    return uint64_t(ratio * (width - 60)) + 50; // margin left=50, right=10
-  }
-
-  int scaleY(double value) const {
-    return height - int((value / y_max) * (height - yoffset)) - yoffset;
-  }
-
-  std::string formatTraffic(double value) const {
-    constexpr const char* suffix[] = {"", "Ki", "Mi", "Gi", "Ti"};
-    int idx = 0;
-    while (value >= 1024.0 && idx < 4) {
-      value /= 1024.0;
-      ++idx;
-    }
-    return std::format("{:.2f}{}", value, suffix[idx]);
-  }
-
-  std::string buildSVG(std::chrono::system_clock::time_point start_time,
-                       std::chrono::system_clock::time_point end_time) {
-
-    std::vector<std::string> svg{};
-    svg.reserve(76 + samples_by_x.size() * 4);
-    svg.push_back(std::format("<svg xmlns='http://www.w3.org/2000/svg' width='{}' height='{}' style='background:#fff; font-family: Arial, sans-serif;'>\n", width, height));
+  void write_header(std::vector<std::string>& svg, const auto& start_time, const auto& end_time, const auto y_max) const {
+    svg.push_back(std::format("<svg xmlns='http://www.w3.org/2000/svg' width='{}' height='{}' style='background:#fff; font-family: Arial, sans-serif;'>\n", cfg.width, cfg.height));
 
     svg.emplace_back("<rect width='100%' height='100%' fill='white'/>\n");
 
-    drawAxes(svg, start_time, end_time);
-    drawStackedLines(svg);
-    drawLabels(svg);
-
-    svg.push_back("</svg>\n");
-    return std::accumulate(svg.begin(), svg.end(), std::string{});
+    drawAxes(svg, start_time, end_time, y_max);
   }
 
   void drawAxes(std::vector<std::string>& svg,
                 const std::chrono::system_clock::time_point start_time,
-                const std::chrono::system_clock::time_point end_time) const {
-    int left_margin = 50;
-    int bottom_margin = yoffset;
-
+                const std::chrono::system_clock::time_point end_time,
+                const auto& y_max) const {
+    
     // Draw Y axis line
-    svg.push_back(std::format("<line x1='{}' y1='0' x2='{}' y2='{}' stroke='black' stroke-width='1'/>\n",
-                              left_margin,
-                              left_margin,
-                              height - bottom_margin));
+    svg.push_back(std::format("<line x1='{}' y1='{}' x2='{}' y2='{}' stroke='black' stroke-width='1'/>\n",
+                              cfg.left_margin,
+                              cfg.top_margin,
+                              cfg.left_margin,
+                              cfg.height - cfg.bottom_margin));
 
     // Draw X axis line
     svg.push_back(std::format("<line x1='{}' y1='{}' x2='{}' y2='{}' stroke='black' stroke-width='1'/>\n",
-                              left_margin,
-                              height - bottom_margin,
-                              width - 10,
-                              height - bottom_margin));
+                              cfg.left_margin,
+                              cfg.height - cfg.bottom_margin,
+                              cfg.width - cfg.right_margin,
+                              cfg.height - cfg.bottom_margin));
 
     // Y axis ticks and labels (5 ticks)
-    for (int i = 0; i <= 5; ++i) {
-      int y = scaleY(y_max * i / 5.0);
-      svg.push_back(std::format("<line x1='{}' y1='{}' x2='{}' y2='{}' stroke='black'/>\n",
-                                left_margin - 5,
+    for (int i = 0; i < 5; i++) {
+      double y = i / 5.0 * (cfg.height - cfg.top_margin - cfg.bottom_margin) + cfg.top_margin;
+      svg.push_back(std::format("<line x1='{}' y1='{:.2f}' x2='{}' y2='{:.2f}' stroke='black' stroke-width='2' />\n",
+                                cfg.left_margin - 10,
                                 y,
-                                left_margin,
+                                cfg.left_margin,
                                 y));
                                 
 
-      double val = y_max * i / 5.0;
-      svg.push_back(std::format("<text x='{}' y='{}' font-size='10' text-anchor='end'>{}</text>\n",
-                                left_margin - 10,
+      double val = y_max * (5 - i) / 5.0;
+      svg.push_back(std::format("<text x='{}' y='{:.2f}' font-size='20' text-anchor='end'>{}bps</text>\n",
+                                cfg.left_margin - 15,
                                 y + 4,
                                 formatTraffic(val)));                                
     }
@@ -211,83 +207,124 @@ private:
     auto current_day = alignToDayStart(start_time);
 
     while (current_day <= end_time) {
-      int x = timestampToX(current_day, start_time, end_time);
-      svg.push_back(std::format("<line x1='{}' y1='{}' x2='{}' y2='{}' stroke='black'/>\n",
+      double x = timestampToX(current_day, start_time, end_time);
+      svg.push_back(std::format("<line x1='{:.2f}' y1='{}' x2='{:.2f}' y2='{}' stroke='black' stroke-width='2' />\n",
                                 x,
-                                height - bottom_margin,
+                                cfg.height - cfg.bottom_margin,
                                 x,
-                                height - bottom_margin + 5));
+                                cfg.height - cfg.bottom_margin + 5));
 
-      svg.push_back(std::format("<text x='{}' y='{}' font-size='10' text-anchor='middle'>{}</text>\n",
+      svg.push_back(std::format("<text x='{:.2f}' y='{}' font-size='20' text-anchor='middle'>{}</text>\n",
                                 x,
-                                height - bottom_margin + 20,
+                                cfg.height - cfg.bottom_margin + 30,
                                 formatDate(current_day)));
 
       current_day += std::chrono::hours(24);
     }
   }
 
-  void drawStackedLines(std::vector<std::string>& svg) {
+  double timestampToX(const auto& ts, const auto& start_time, const auto& end_time) const noexcept {
+    const double w = cfg.width - cfg.left_margin - cfg.right_margin;
+    const double elapsed = (ts - start_time).count();
+    const double total = (end_time - start_time).count();
+    return elapsed / total * w + cfg.left_margin;
+  }
+  template<typename DATA>
+  void drawStackedLines(const std::vector<DATA>& data_rows, auto& svgs, const auto& start_time, const auto& end_time, const auto y_max) {
 
-    // Compute stack heights in pixels for each protocol
-    size_t n = samples_by_x.size();
-    int base{height - yoffset};
+    constexpr std::size_t N = data_size_v<DATA>();
 
-    std::vector<uint64_t> xs(n),y_icmp(n), y_udp(n), y_tcp(n), y_p2p(n), y_http(n), y_mail(n), y_ftp(n);
-    size_t max_x{0};
+    
 
-    for (const auto& [i, sample]: samples_by_x) {
-      xs.push_back(i);
-      if (i > max_x) {
-        max_x = i;
-      }
-      y_icmp[i] = uint64_t(base) - uint64_t((sample.icmp / y_max) * (height - yoffset));
-      y_udp[i]  = y_icmp[i] - uint64_t((sample.udp / y_max) * (height - yoffset));
-      uint64_t tcp_p2p_y = y_udp[i] - uint64_t(((sample.tcp + sample.p2p) / y_max) * (height - yoffset));
-      y_tcp[i] = tcp_p2p_y;
-      y_p2p[i] = tcp_p2p_y;
-      y_http[i] = y_tcp[i] - uint64_t((sample.http / y_max) * (height - yoffset));
-      y_mail[i] = y_http[i] - uint64_t((sample.mail / y_max) * (height - yoffset));
-      y_ftp[i] = y_mail[i] - uint64_t((sample.ftp / y_max) * (height - yoffset));
+    std::array<std::array<std::vector<std::string>, layers.size()>, N> paths{};
+
+    for (std::size_t i = 0; i < layers.size(); ++i) {
+      static_for<N>([&]<std::size_t n>(std::integral_constant<std::size_t, n>) {
+          paths[n][i].reserve(data_rows.size() * 6);
+          paths[n][i].push_back(std::format(PATH_START, layers[i].color));
+        });
     }
+    std::array<double, N> y0s{};
 
-    std::vector<uint64_t> base_vec(n);
+    for (const DATA& d : data_rows) {
+      y0s.fill(cfg.height - cfg.bottom_margin);
 
-    auto polygonPath = [&](const std::vector<uint64_t>& top, const std::vector<uint64_t>& bottom, auto color) {
-      svg.push_back(std::format("<path fill='{}' opacity='0.7' stroke='black' d='", color));
-      svg.push_back( std::format("M {} {}", xs[0], top[0]));
+      auto& first = get_unit<DATA, 0>(d);
+      const double x = timestampToX(first.timestamp, start_time, end_time + first.sample_duration);
+      const double x1 = timestampToX(first.timestamp + first.sample_duration, start_time, end_time + first.sample_duration);
 
-      for (size_t i = 1; i < max_x; ++i) {
-        svg.push_back(std::format(" L {} {}", xs[i], top[i]));
-      }
+      static_for<N>([&]<std::size_t n>(std::integral_constant<std::size_t, n>) {
+          const auto& sd = get_unit<DATA, n>(d);
+          if (sd.timestamp < start_time || sd.timestamp > end_time) {
+            return;
+          }
+          static_for<layers.size()>([&]<std::size_t i>(std::integral_constant<std::size_t, i>) {
 
-      for (size_t i = max_x; i-- > 0;) {
-        svg.push_back(std::format(" L {} {}", xs[i], bottom[i]));
-      }
-      svg.push_back(" Z' />\n");
-    };
+            uint64_t val = sd.*(layers[i].field);
+            if constexpr (layers[i].name == "tcp") {
+              val -= (sd.ftp + sd.http + sd.p2p + sd.mail);
+            }
+            double y = y0s[n]
+              - (val / y_max) * (graph_height - cfg.top_margin);
+            drawBox(paths[n][i], x, x1, y0s[n], y);
+            svgs[n].push_back(std::format("<text x='{}' y='{}' font-size='20' fill='black'>{} {}Bps</text>\n",
+                                          x,
+                                          y+50*i+50,
+                                          layers[i].name,
+                                          formatTraffic(val)
+                                          ));
+            std::println("setting y to {} for {} {} {}, {}, {}, {}", y, val, y_max, y0s[n], i, layers[i].name, n);
+            std::println("{}", &(sd.*(layers[i].field)) - &sd.total);
+            y0s[n] = y;
+          });
+        });
 
-    polygonPath(y_icmp, base_vec, COLOR_ICMP);
-    polygonPath(y_udp, y_icmp, COLOR_UDP);
-    polygonPath(y_tcp, y_udp, COLOR_TCP);
-    polygonPath(y_http, y_tcp, COLOR_HTTP);
-    polygonPath(y_mail, y_http, COLOR_MAIL);
-    polygonPath(y_ftp, y_mail, COLOR_FTP);
+    
 
-
-    // Draw total traffic line on top
-    svg.push_back(std::format("<polyline fill='none' stroke='{}' stroke-width='1' points='", COLOR_TOTAL));
-    for (size_t i = 0; i < n; ++i) {
-      int y = scaleY(samples_by_x[xs[i]].total);
-      svg.push_back(std::format("{},{} ", xs[i], y));
     }
-    svg.push_back("' />\n");
+    for (std::size_t i = 0; i < layers.size(); i++) {
+      static_for<N>([&]<std::size_t n>(std::integral_constant<std::size_t, n>) {
+          paths[n][i].emplace_back(" Z' />\n");
+        });
+    }
+    static_for<N>([&]<std::size_t n>(std::integral_constant<std::size_t, n>) {
+        for (std::size_t i = 0; i < layers.size(); i++) {
+          svgs[n].push_back(util::string_join("", paths[n][i]));
+        }
+      });
+  
   }
 
-  void drawLabels(std::vector<std::string>& svg) const {
-    svg.push_back(std::format("<text x='10' y='15' font-size='12' fill='black'>Peak: {}Bps, Avg: {}Bps</text>\n",
-                              formatTraffic(peak_rate),
-                              formatTraffic(total_sum / (samples_by_x.size() ? samples_by_x.size() : 1))));
+  void drawBox(std::vector<std::string>& svgpath, double x0, double x1, double y0, double y1) {
+    svgpath.push_back("\n");
+    moveTo(svgpath, x0, y1);
+    lineTo(svgpath, x1, y1);
+    lineTo(svgpath, x1, y0);
+    lineTo(svgpath, x0, y0);
+    lineTo(svgpath, x0, y1);
+    svgpath.push_back("\n");
+  }
+
+  void moveTo(std::vector<std::string>& svgpath, double x, double y) {
+    svgpath.push_back(std::format("M {:.2f} {:.2f} ", x, y));
+  }
+  void lineTo(std::vector<std::string>& svgpath, double x, double y) {
+    svgpath.push_back(std::format("L {:.2f} {:.2f} ", x, y));
+  }
+
+  void drawLabels(std::vector<std::string>& svg, const auto& duration, const auto& peak, const auto& total) const {
+    uint128_t s = static_cast<uint128_t>(duration_cast<std::chrono::seconds>(duration).count());
+    std::println("duration: {}", s);
+    svg.push_back(std::format("<text x='10' y='15' font-size='20' fill='black'>Peak: {}Bps, Total: {}B, Avg: {}Bps</text>\n",
+                              formatTraffic(peak.total),
+                              formatTraffic(total.total),
+                              formatTraffic(total.total / s)));
+
+    static_for<layers.size()>([&]<std::size_t n>(std::integral_constant<std::size_t, n>) {
+        svg.push_back(std::format("<text x='{}' y='{}' font-size='20' fill='black'>{}</text>\n", cfg.width - 50, 30 + 20*n, layers[n].name));
+        svg.push_back(std::format("<rect x='{}' y='{}' width='50' height='20' fill='{}' />\n", cfg.width - 100, 15 + 20*n, layers[n].color));
+
+      });
   }
 
   // Utility: Align time point to 00:00 of that day
@@ -308,6 +345,14 @@ private:
 
     // Format as YYYY-MM-DD
     return std::format("{:%F}", ymd); // %F = ISO 8601 (YYYY-MM-DD)
-}
-
+  }
+  std::string formatTraffic(double value) const {
+    constexpr const char* suffix[] = {"", "Ki", "Mi", "Gi", "Ti"};
+    int idx = 0;
+    while (value >= 1024.0 && idx < 4) {
+      value /= 1024.0;
+      ++idx;
+    }
+    return std::format("{:.2f}{}", value, suffix[idx]);
+  }
 };

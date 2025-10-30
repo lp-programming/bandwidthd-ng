@@ -1,0 +1,156 @@
+module;
+export module Parser;
+import Types;
+import <filesystem>;
+import <fstream>;
+import <string>;
+import <exception>;
+import <ranges>;
+import <array>;
+import <sstream>;
+import <chrono>;
+
+auto strip_quotes(auto line) {
+  auto view = std::ranges::drop_view(line, 1) | std::views::reverse | std::views::drop(1) | std::views::reverse;
+  return std::string{view.begin(), view.end()};
+}
+
+
+template<typename T>
+auto from_string(std::string_view s) {
+  using CleanT = std::remove_cvref_t<T>;
+  if constexpr (std::is_same_v<CleanT, bool>) {
+    return s == "true" || s == "1" || s == "on";
+  }
+  if constexpr (std::is_same_v<CleanT, std::string>) {
+    return strip_quotes(s);
+  }
+  std::istringstream iss{std::string{s}};
+  CleanT t;
+  if (!(iss >> t)) throw std::runtime_error("bad conversion");
+  return t;
+}
+
+
+
+template <auto MemberPtr>
+constexpr void setter(Config& cfg, std::string_view value) {
+    using Member = decltype(Config{}.*MemberPtr);
+    cfg.*MemberPtr = from_string<Member>(value);
+}
+
+struct ConfigFieldMapping {
+  std::string_view prefix;
+  void (*setter)(Config&, std::string_view);
+};
+
+consteval auto config_mappings() {
+  return std::array{
+    ConfigFieldMapping{"dev", &setter<&Config::dev>},
+    ConfigFieldMapping{"skip_intervals", &setter<&Config::skip_intervals>},
+    ConfigFieldMapping{"graph_cutoff", &setter<&Config::graph_cutoff>},
+    ConfigFieldMapping{"promiscuous", &setter<&Config::promisc>},
+    ConfigFieldMapping{"log_dir", &setter<&Config::log_dir>},
+    ConfigFieldMapping{"output_cdf", &setter<&Config::output_cdf>},
+    ConfigFieldMapping{"recover_cdf", &setter<&Config::recover_cdf>},
+    ConfigFieldMapping{"filter", &setter<&Config::filter>},
+    ConfigFieldMapping{"htdocs_dir", &setter<&Config::htdocs_dir>},
+    ConfigFieldMapping{"pgsql_connect_string", &setter<&Config::psql_connect_string>},
+    ConfigFieldMapping{"sqlite_connect_string", &setter<&Config::sqlite_connect_string>},
+    ConfigFieldMapping{"meta_refresh", [](Config& cfg, std::string_view line){
+      cfg.meta_refresh = std::chrono::seconds{from_string<uint32_t>(line)};
+    }},
+    ConfigFieldMapping{"graph", [](Config& cfg, auto _){
+      cfg.graph_intervals = 
+        GraphInterval::Classic |
+        GraphInterval::Hour |
+        GraphInterval::Day |
+        GraphInterval::Week |
+        GraphInterval::Month |
+        GraphInterval::Year;
+    }},
+
+    ConfigFieldMapping{"subnet", [](Config& cfg, std::string_view line) {
+      std::println("74: {}", line);
+      auto& s = cfg.subnets.emplace_back(line);
+      std::println("{}/{}", util::format_ip(s.ip), util::format_ip(s.mask));
+      
+    }},
+    
+
+  };
+}
+
+export class Parser {
+  const std::filesystem::path path;
+
+  [[nodiscard]]
+  static constexpr bool is_space(char p) noexcept
+  {
+    auto ne = [p](auto q) { return p != q; };
+    return !!(" \t\n\v\r\f" | std::views::drop_while(ne));
+  };
+  
+ 
+  template<typename T>
+  static constexpr std::string strip(const T in)
+  {
+    auto view = in
+      | std::views::drop_while(is_space)
+      | std::views::reverse
+      | std::views::drop_while(is_space)
+      | std::views::reverse
+      ;
+    std::string r {view.begin(), view.end()};
+    return r;
+  }
+
+  static std::vector<std::string> readlines(std::ifstream& in)
+  {
+    std::vector<std::string> lines{};
+    std::string line;
+    while (std::getline(in, line)) {
+      lines.push_back(line);
+    }
+    return lines;
+  }
+public:
+  Parser(const std::string& file) : path(file) {}
+  void parse(Config& cfg) const {
+    std::ifstream file(path);
+    if (!file) {
+      throw std::filesystem::filesystem_error
+        (
+         "Failed to open file",
+         path,
+         std::error_code(errno, std::generic_category())
+         );
+    }
+
+    auto lines =
+      readlines(file)
+      | std::views::transform([](const auto& s) {return strip(s);})
+      | std::views::filter
+      ([](const auto sv) {
+        return !sv.empty() && !sv.starts_with("#");
+      });
+      
+
+    for (const std::string& line : lines) {
+      bool found = false;
+      for (const auto& m: config_mappings()) {
+        if (line.starts_with(m.prefix)) {
+          auto value = strip(std::ranges::drop_view(line, static_cast<ssize_t>(m.prefix.size()) + 1));
+          if (value.empty()) {
+            throw std::runtime_error(std::format("{} line must supply a value: {}", m.prefix, line));
+          }
+          m.setter(cfg, value);
+          found = true;
+        }
+      }
+      if (!found) {
+        throw std::runtime_error(std::format("Not a recognized config command: {}", line));
+      }
+    }
+  }
+};

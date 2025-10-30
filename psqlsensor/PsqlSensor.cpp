@@ -1,0 +1,109 @@
+import Postgres;
+import BandwidthD;
+import <unordered_map>;
+import <vector>;
+import <utility>;
+import <chrono>;
+import <exception>;
+import <optional>;
+import <unistd.h>;
+
+using namespace std::chrono_literals;
+
+namespace __cxxabiv1 {
+  std::terminate_handler __terminate_handler = +[]() {
+    std::abort();
+  };
+}
+
+
+template<typename CURSOR>
+class DatabaseWritingSensor: public Sensor<DatabaseWritingSensor<CURSOR>, Modes::BothDefault>  {
+public:
+
+  CURSOR& cursor;
+  DatabaseWritingSensor& base;
+  DatabaseWritingSensor(Config& config, CURSOR& cursor): Sensor<DatabaseWritingSensor<CURSOR>, Modes::IPv4Default | Modes::IPv6Default>(config), cursor(cursor), base(*this) {
+    
+    
+  }
+
+  int Main() {
+    for (;;) {
+      const auto starttime = std::chrono::system_clock::now();
+      auto now = std::chrono::system_clock::now();
+
+      while (((now = std::chrono::system_clock::now()) - starttime) < base.config.interval) {
+        if (this->Poll()) {
+          this->Step();
+        }
+      }
+      std::println("flushing");
+      cursor.SerializeData(base.ips, base.txrx, base.config.interval, now);
+      base.ips.clear();
+      base.txrx.clear();
+      cursor.SerializeData(base.ips6, base.txrx6, base.config.interval, now);
+      base.ips.clear();
+      base.txrx6.clear();
+    }
+    return 0;
+  } 
+};
+
+int Main(const uint argc, const char * const * const argv) {
+  Config config{};
+  config.interval = 200s;
+  config.syslog_prefix = "bandwidthd";
+
+  const std::vector<std::string> args{argv, argv + argc};
+  if (argc < 5 || !(argc % 2)) {
+    std::println("Usage: {} --dev DEV [--filter FILTER] [--promiscuous BOOL] --subnet <CIDR> [--subnet <CIDR>...] [--notsubnet <CIDR>...] [--txrxsubnet <CIDR>...]", args.at(0));
+    std::println("Wrong number of args");
+    return 1;
+  }
+  
+  config.dev = args.at(2);
+  config.filter = "tcp";
+
+  for (auto i = 3uz; i < argc; i += 2uz) {
+    auto arg = args.at(i);
+    if (arg == std::string{"--filter"}) {
+      config.filter = args.at(i + 1uz);
+    }
+    else if (arg == std::string{"--promiscuous"}) {
+      config.promisc = args.at(i + 1uz) == "true";
+    }
+    else if (arg == std::string{"--subnet"}) {
+      auto& sn = config.subnets.emplace_back(args.at(i + 1uz));
+      //            syslog(LOG_INFO, "Monitoring subnet %s with netmask %s", inet_ntoa(addr), inet_ntoa(addr2));
+
+      Logger::info(std::format("Monitoring subnet {} with netmask {}",
+                               util::format_ip(sn.ip, sn.family),
+                               util::format_ip(sn.mask, sn.family)));
+    }
+    else if (arg == std::string{"--notsubnet"}) {
+      auto& sn = config.notsubnets.emplace_back(args.at(i + 1uz));
+      Logger::info(std::format("Ignoring subnet {} with netmask {}",
+                               util::format_ip(sn.ip, sn.family),
+                               util::format_ip(sn.mask, sn.family)));
+    }
+    else if (arg == std::string{"--txrxsubnet"}) {
+      auto& sn = config.txrxsubnets.emplace_back(args.at(i + 1uz));
+      Logger::info(std::format("Tracking subnet {} with netmask {}",
+                               util::format_ip(sn.ip, sn.family),
+                               util::format_ip(sn.mask, sn.family)));
+    }
+  }
+
+  Cursor<PostgresDB> db{config};
+  DatabaseWritingSensor<Cursor<PostgresDB>> sensor{config, db};
+  
+  
+  return sensor.Main();
+}
+
+extern "C" {
+  int main(const int argc, const char * const * const argv) {
+    return Main(static_cast<const ssize_t>(argc), argv);
+  }
+}

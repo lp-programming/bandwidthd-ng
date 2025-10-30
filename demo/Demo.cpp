@@ -7,10 +7,16 @@ import <print>;
 
 class SimpleBD: public Sensor<SimpleBD, Modes::Both> {
 public:
-  void ProcessIPv6(const std::string& srcip, const std::string& dstip, const net_u128 , const net_u128 , const uint16_t length, const ip6_hdr& ) {
+  void ProcessIPv6(const uint16_t length, const ip6_hdr& iheader, HeaderView&) {
+    auto srcip = util::format_ipv6(static_cast<net_u128>(iheader.ip6_src));
+    auto dstip = util::format_ipv6(static_cast<net_u128>(iheader.ip6_dst));
+
     std::println("Got {} bytes from {} to {}", length, srcip, dstip);
   }
-  auto ProcessIPv4(const std::string& srcip, const std::string& dstip, const net_u32 , const net_u32 , const uint16_t length, const ip& ) {
+  void ProcessIPv4(const uint16_t length, const ip& iheader, HeaderView&) {
+    auto srcip = util::format_ipv4(static_cast<net_u32>(iheader.ip_src.s_addr));
+    auto dstip = util::format_ipv4(static_cast<net_u32>(iheader.ip_dst.s_addr));
+
     std::println("Got {} bytes from {} to {}", length, srcip, dstip);
   }
 };
