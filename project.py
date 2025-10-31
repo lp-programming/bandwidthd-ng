@@ -1,5 +1,5 @@
-from pybuild import target, cppm, cppms, find_cppms, cpp, func, create_module_file, system_headers, proc
-from library_search import find_python, find_pqxx, find_sqlite
+from pybuild import target, cppm, cppms, find_cppms, cpp, func, system_headers, proc, write_module_map
+from pybuild.library_search import find_library, find_python
 
 import colorama
 import pathlib
@@ -63,19 +63,6 @@ target.common_args = [
 
 find_cppms(__file__)
 
-def write_module_map(_):
-    mm = create_module_file(True)
-    if (target.project / target.module_maps[0]).exists():
-        with open(target.project / target.module_maps[0], 'r') as f:
-            if f.read().strip() == mm.strip():
-                return True
-    with open(str(target.project / target.module_maps[0]), 'w') as f:
-        print(mm, file=f)
-    print(colorama.Fore.RED,
-          colorama.Back.BLACK,
-          "modules.map rebuilt. You probably need to run clean.",
-          colorama.Style.RESET_ALL)
-    return True
 
 def dist_clean(t):
     module_clean(t)

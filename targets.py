@@ -3,9 +3,11 @@ This is a procedural config file.
 
 """
 from project import *
-
+from functools import partial
 PYLIB = f"lib/PyBandwidthD{find_python() or '.so'}"
 
+find_pqxx = partial(find_library, "libpq", ("-lpq", "-lpqxx"), "-lpqxx")
+find_sqlite = partial(find_library, "SQLiteCpp", ("-lsqlite3", "-lSQLiteCpp"), pkgconfig=False)
 
 targets.update( cppms | {
     "all": target({
@@ -36,21 +38,21 @@ targets.update( cppms | {
         path="graph/Graph.cpp",
         out="bin/graph",
         requirements=[find_pqxx],
-        args=["-lpcap", "-lpqxx", "-lpq"]
+        args=["-lpcap", func(find_pqxx)]
     ),
     "bin/psqlsensor": cpp(
         doc="This is a minimal sensor that only can send data to postgres",
         path="psqlsensor/PsqlSensor.cpp",
         out="bin/psqlsensor",
         requirements=[find_pqxx],
-        args=["-lpcap", "-lpqxx", "-lpq"]
+        args=["-lpcap", func(find_pqxx)]
     ),
     "bin/bandwidthd": cpp(
         doc="This is the classic version, which does everything in one binary",
         path="classic/Classic.cpp",
         out="bin/bandwidthd",
         requirements=[find_pqxx, find_sqlite],
-        args=["-lpcap", "-lpqxx", "-lpq", "-lsqlite3", "-lSQLiteCpp"]
+        args=["-lpcap", func(find_pqxx), func(find_sqlite)]
     ),
     "classic": target({
         "doc":"As close to the original bandwidthd as we can get",
@@ -66,7 +68,8 @@ targets.update( cppms | {
         doc="This version exposes basic functionality through python",
         path="python/PyBandwidthd.cpp",
         out=PYLIB,
-        args=["-lpcap", "-lpqxx", "-lpq", proc("python3-config", "--includes", "--ldflags", "--embed"), "-Wno-old-style-cast", "-shared"]
+        requirements=[find_pqxx, find_python],
+        args=["-lpcap", func(find_pqxx), proc("python3-config", "--includes", "--ldflags", "--embed"), "-Wno-old-style-cast", "-shared"]
     ),
     "setup": target({
         "virtual": True,
