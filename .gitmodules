@@ -1,0 +1,3 @@
+[submodule "submodules/pybuild"]
+	path = submodules/pybuild
+	url = https://github.com/lp-programming/pybuild
