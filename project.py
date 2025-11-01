@@ -1,7 +1,6 @@
-from pybuild import target, cppm, cppms, find_cppms, cpp, func, system_headers, proc, write_module_map
+from pybuild import target, cppm, cppms, find_cppms, cpp, func, system_headers, proc, write_module_map, colorama
 from pybuild.library_search import find_library, find_python
 
-import colorama
 import pathlib
 import time
 import os
@@ -9,7 +8,8 @@ import sys
 import shlex
 
 target.pymodules.append(sys.modules['project'])
- 
+
+target.module_maps[0] = target.build / "modules.map"
 
 
 target.modes['release'] = [
