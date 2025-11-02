@@ -23,4 +23,4 @@ jobs:
         CC=clang-19 CXX=clang++-19 CXXFLAGS=" -stdlib=libc++ " make -j `nproc`
         popd
     - name: make
-      run: CXXFLAGS="-Ilibpqxx/include -Llibpqxx/build/src" make -j
+      run: CXXFLAGS="-Ilibpqxx/include -Llibpqxx/build/src" make -j && make bin/bandwidthd python
