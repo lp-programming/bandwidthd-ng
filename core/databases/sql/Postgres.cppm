@@ -1,7 +1,9 @@
 module;
 export module Postgres;
-export import Database;
-export import Types;
+import string_util;
+import Config;
+import <format>;
+import <print>;
 export import <pqxx/pqxx>;
 
 

@@ -3,6 +3,9 @@ import BandwidthD;
 import Parser;
 import Memory;
 import TrafficGraph;
+import Cursor;
+import SummaryData;
+
 import <vector>;
 import <string>;
 import <span>;
@@ -20,7 +23,7 @@ import <exception>;
 import <optional>;
 import <unistd.h>;
 
-
+using namespace bandwidthd;
 using namespace std::string_literals;
 
 std::chrono::time_point<std::chrono::system_clock>

@@ -1,5 +1,8 @@
 import Postgres;
 import BandwidthD;
+import format_ip;
+import Cursor;
+
 import <unordered_map>;
 import <vector>;
 import <utility>;
@@ -9,12 +12,8 @@ import <optional>;
 import <unistd.h>;
 
 using namespace std::chrono_literals;
+using namespace bandwidthd;
 
-namespace __cxxabiv1 {
-  std::terminate_handler __terminate_handler = +[]() {
-    std::abort();
-  };
-}
 
 
 template<typename CURSOR>

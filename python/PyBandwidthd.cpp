@@ -1,5 +1,7 @@
-import Types;
 import BandwidthD;
+import format_ip;
+import SubnetIdentifier;
+
 import <sys/socket.h>;
 import <map>;
 import <vector>;
@@ -7,11 +9,13 @@ import <utility>;
 import <pybind11/pybind11.h>;
 import <pybind11/stl.h>;
 
-using util::net_integer::parse_ipv4;
-using util::net_integer::parse_ipv6;
+using types::net_integer::parse_ipv4;
+using types::net_integer::parse_ipv6;
 
 
 namespace py = pybind11;
+
+using namespace bandwidthd;
 
 class PythonSensor: public Sensor<PythonSensor, Modes::BothDefault> {
 public:

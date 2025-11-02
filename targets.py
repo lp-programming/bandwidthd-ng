@@ -18,7 +18,7 @@ targets.update( cppms | {
     }),
     "core": target({
         "doc": "The unspecialized library files",
-        "deps": [cppm.module("core/BandwidthD.cppm")],
+        "deps": [cppm.module("core/network/BandwidthD.cppm")],
         "virtual": True
     }),
     "bin/demo": cpp(
@@ -82,6 +82,6 @@ targets.update( cppms | {
     }),
 })
 
-targets[next(targets["BandwidthD"].deps)]['args'].append('-Wno-zero-length-array')
+targets[next(targets["SubnetIdentifier"].deps)]['args'].append('-Wno-zero-length-array')
 
 

@@ -1,68 +1,9 @@
 import BandwidthD;
 import Memory;
 import TrafficGraph;
-//import <mutex>;
 
-/*
-std::mutex alloc_mutex;
-
-size_t total_allocated = 0;
-size_t total_freed = 0;
-
-void* operator new(std::size_t size) {
-    void* ptr = std::malloc(size);
-    if (!ptr) throw std::bad_alloc();
-
-    {
-        std::lock_guard<std::mutex> lock(alloc_mutex);
-        total_allocated += size;
-        printf("[alloc] %zu bytes at %p (total allocated: %zu bytes)\n", size, ptr, total_allocated);
-    }
-    return ptr;
-}
-
-void operator delete(void* ptr) noexcept {
-    // Can't know size here, so no size deduction
-    std::free(ptr);
-    printf("[free] pointer at %p\n", ptr);
-}
-
-void operator delete(void* ptr, std::size_t size) noexcept {
-    {
-        std::lock_guard<std::mutex> lock(alloc_mutex);
-        total_freed += size;
-        printf("[free] %zu bytes at %p (total freed: %zu bytes)\n", size, ptr, total_freed);
-    }
-    std::free(ptr);
-}
-
-
-void* operator new[](std::size_t size) {
-    void* ptr = std::malloc(size);
-    if (!ptr) throw std::bad_alloc();
-    {
-        std::lock_guard<std::mutex> lock(alloc_mutex);
-        total_allocated += size;
-        printf("[alloc[]] %zu bytes at %p (total allocated: %zu bytes)\n", size, ptr, total_allocated);
-    }
-    return ptr;
-}
-
-void operator delete[](void* ptr) noexcept {
-    std::free(ptr);
-    printf("[free[]] pointer at %p\n", ptr);
-}
-
-void operator delete[](void* ptr, std::size_t size) noexcept {
-    {
-        std::lock_guard<std::mutex> lock(alloc_mutex);
-        total_freed += size;
-        printf("[free[]] %zu bytes at %p (total freed: %zu bytes)\n", size, ptr, total_freed);
-    }
-    std::free(ptr);
-}
-*/
-
+import format_ip;
+import <array>;
 import <unordered_map>;
 import <vector>;
 import <utility>;
@@ -70,6 +11,7 @@ import <chrono>;
 import <exception>;
 
 using namespace std::chrono_literals;
+using namespace bandwidthd;
 
 namespace __cxxabiv1 {
   std::terminate_handler __terminate_handler = +[]() {

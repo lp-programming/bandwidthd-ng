@@ -1,9 +1,13 @@
-import Types;
 import BandwidthD;
+
+import format_ip;
+
 import <vector>;
 import <string>;
 import <span>;
 import <print>;
+
+using namespace bandwidthd;
 
 class SimpleBD: public Sensor<SimpleBD, Modes::Both> {
 public:

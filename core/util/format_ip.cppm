@@ -9,11 +9,11 @@ import <sys/socket.h>;
 import net_integer;
 import uint128_t;
 
-using util::net_integer::NetIntegerIP;
+using types::net_integer::NetIntegerIP;
 
 namespace util {
-  using net_integer::net_u128;
-  using net_integer::net_u32;
+  using types::net_integer::net_u128;
+  using types::net_integer::net_u32;
 
   export
   inline std::string format_ipv4(const NetIntegerIP auto nip) {
