@@ -7,6 +7,23 @@ import hashlib
 import time
 import enum
 import argparse
+import signal
+
+stop = False
+def SignalStop(num, frame):
+    if num == signal.SIGUSR2:
+        import code
+        code.InteractiveConsole(locals=globals() | locals()).interact()
+    print(f"Got {signal.strsignal(num)}, stopping...")
+    global stop
+    if stop == num:
+        print("Stopping immediately")
+        raise SystemExit(num)
+    stop = num
+
+signal.signal(signal.SIGINT, SignalStop)
+signal.signal(signal.SIGTERM, SignalStop)
+signal.signal(signal.SIGUSR2, SignalStop)
 
 sys.dont_write_bytecode = True
 
@@ -47,6 +64,11 @@ class Task:
     def markCompleted(cls):
         cls.building -= 1
         cls.totalBuilt += 1
+        Target.syncState()
+        json_status = json.dumps(meta_status)
+        with STATUS_FILE.open("w", encoding="utf-8") as f:
+            print(json_status, file=f)
+
     def __init__(self, t):
         self.proc = None
         self.target = t
@@ -71,6 +93,9 @@ class Task:
                 Task.globalState = State.failure
             else:
                 self.state = State.rebuilt
+        else:
+            if stop:
+                self.proc.send_signal(stop)
         return r
     def maybeStart(self):
         if Task.building < Task.limit:
@@ -104,7 +129,7 @@ class Task:
             if not self.start():
                 return
         self.proc.wait()
-        self.poll()
+        return self.poll()
     def __repr__(self):
         return f"<Task: {self.target}>"
     __str__=__repr__
@@ -333,12 +358,23 @@ def main(argv = sys.argv):
 
     ec = 0
     building = [Target(target).prebuild(mode) for target in build_targets]
+    if Task.limit > 1:
+        for i in range(30):
+            if stop:
+                break
+            finished = True
+            for b in building:
+                b.poll()
+                if b.state is State.pending:
+                    finished = False
+            if finished:
+                break
+            time.sleep(1)
     for b in building:
         b.wait()
         ec |= b.poll()
 
     Target.syncState()
-
 
     json_status = json.dumps(meta_status)
     with STATUS_FILE.open("w", encoding="utf-8") as f:
