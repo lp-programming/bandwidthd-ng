@@ -14,6 +14,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: deps
-      run: sudo apt-get install libpqxx-dev libpq-dev libc++-19-dev clang-19 libsqlite3-dev libsqlite3-dev libpcap-dev
+      run: sudo apt-get install pybind11-dev libpq-dev libc++-19-dev clang-19 libsqlite3-dev libsqlite3-dev libpcap-dev
+    - name: deps2
+      run: sudo apt-get build-dep libpqxx-dev
     - name: make
       run: make
