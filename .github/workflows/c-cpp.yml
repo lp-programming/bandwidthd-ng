@@ -1,4 +1,4 @@
-name: C/C++ CI
+name: C++ CI
 
 on:
   push:
@@ -14,6 +14,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: deps
-      run: sudo apt-get install pybind11-dev libpq-dev libc++-19-dev clang-19 libsqlite3-dev libsqlite3-dev libpcap-dev
+      run: |
+        sudo apt-get install pybind11-dev libpq-dev libc++-19-dev clang-19 libsqlite3-dev libsqlite3-dev libpcap-dev
+        git clone https://github.com/jtv/libpqxx
+        mkdir libpqxx/build
+        pushd libpqxx/build
+        CC=clang CXX=clang++ CXXFLAGS="-std=c++26 -stdlib=libc++ -flto" cmake ..
+        CC=clang CXX=clang++ CXXFLAGS="-std=c++26 -stdlib=libc++ -flto" make -j `nproc`
+        popd
     - name: make
-      run: make
+      run: CXXFLAGS="-Ilibpqxx/include -Llibpqxx/build/src" make -j
