@@ -14,6 +14,6 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: deps
-      run: sudo apt-get install libpqxx-dev libpq-dev libc++-dev clang libsqlite3-dev libpcap-dev
+      run: sudo apt-get install libpqxx-dev libpq-dev libc++-dev clang libsqlite3-dev libsqlite3-dev libpcap-dev
     - name: make
       run: make
