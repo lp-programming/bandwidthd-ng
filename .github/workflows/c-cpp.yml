@@ -19,8 +19,8 @@ jobs:
         git clone https://github.com/jtv/libpqxx
         mkdir libpqxx/build
         pushd libpqxx/build
-        CC=clang CXX=clang++ CXXFLAGS="-std=c++26 -stdlib=libc++ -flto" cmake ..
-        CC=clang CXX=clang++ CXXFLAGS="-std=c++26 -stdlib=libc++ -flto" make -j `nproc`
+        CC=clang-19 CXX=clang++-19 CXXFLAGS=" -stdlib=libc++ " cmake .. -DBUILD_TEST=OFF
+        CC=clang-19 CXX=clang++-19 CXXFLAGS=" -stdlib=libc++ " make -j `nproc`
         popd
     - name: make
       run: CXXFLAGS="-Ilibpqxx/include -Llibpqxx/build/src" make -j
