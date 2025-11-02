@@ -1,0 +1,86 @@
+module;
+export module SummaryData;
+import Statistics;
+
+import <chrono>;
+import <string>;
+namespace bandwidthd {
+  export struct SummaryData {
+    std::chrono::system_clock::time_point timestamp;
+    std::chrono::seconds sample_duration;
+    std::string net;
+    uint64_t total{0};
+    uint64_t icmp{0};
+    uint64_t udp{0};
+    uint64_t tcp{0};
+    uint64_t ftp{0};
+    uint64_t http{0};
+    uint64_t mail{0};
+    uint64_t p2p{0};
+    uint64_t count{0};
+
+    inline SummaryData& operator+=(const SummaryData& rhs) {
+      total += rhs.total;
+      icmp  += rhs.icmp;
+      udp   += rhs.udp;
+      tcp   += rhs.tcp;
+      ftp   += rhs.ftp;
+      http  += rhs.http;
+      mail  += rhs.mail;
+      p2p   += rhs.p2p;
+      count += rhs.count;
+      return *this;
+    }
+    inline SummaryData& operator<<(const SummaryData& rhs) {
+      total  = std::max(total, rhs.total);
+      icmp   = std::max(icmp , rhs.icmp );
+      udp    = std::max(udp  , rhs.udp  );
+      tcp    = std::max(tcp  , rhs.tcp  );
+      ftp    = std::max(ftp  , rhs.ftp  );
+      http   = std::max(http , rhs.http );
+      mail   = std::max(mail , rhs.mail );
+      p2p    = std::max(p2p  , rhs.p2p  );
+      count  = std::max(count, rhs.count);
+      return *this;
+    }
+
+    inline SummaryData& operator+=(const Statistics& rhs) {
+      total += rhs.total;
+      icmp  += rhs.icmp;
+      udp   += rhs.udp;
+      tcp   += rhs.tcp;
+      ftp   += rhs.ftp;
+      http  += rhs.http;
+      mail  += rhs.mail;
+      p2p   += rhs.p2p;
+      count += rhs.packet_count;
+      return *this;
+    }
+
+
+    void normalize() {
+      auto sd = static_cast<uint64_t>(sample_duration.count());
+      total /= sd;
+      icmp /= sd;
+      udp /= sd;
+      tcp /= sd;
+      ftp /= sd;
+      http /= sd;
+      mail /= sd;
+      p2p /= sd;
+      count /= sd;
+    }
+
+    void clear() {
+      total = 0;
+      icmp = 0;
+      udp = 0;
+      tcp = 0;
+      ftp = 0;
+      http = 0;
+      mail = 0;
+      p2p = 0;
+      count = 0;
+    }
+  };
+}

@@ -163,6 +163,8 @@ namespace bandwidthd {
       }
     }
 
+  private:
+
     void write_header(std::vector<std::string>& svg, const auto& start_time, const auto& end_time, const auto y_max) const {
       svg.push_back(std::format("<svg xmlns='http://www.w3.org/2000/svg' width='{}' height='{}' style='background:#fff; font-family: Arial, sans-serif;'>\n", cfg.width, cfg.height));
 

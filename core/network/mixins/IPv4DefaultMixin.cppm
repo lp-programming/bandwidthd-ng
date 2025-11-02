@@ -1,0 +1,104 @@
+module;
+export module IPv4DefaultMixin;
+import net_integer;
+import HeaderView;
+import Statistics;
+import IPData;
+import Config;
+
+
+import <netinet/tcp.h>;
+import <netinet/ip.h>;
+import <net/ethernet.h>;
+import <unordered_map>;
+import <vector>;
+
+using namespace types::net_integer;
+
+namespace bandwidthd {
+  export
+  template<typename BD>
+  class IPv4DefaultMixin {
+    using StatField = Statistics::StatField;
+  public:
+    std::unordered_map<net_u32, IPData> ips{};
+    std::unordered_map<std::pair<net_u32,net_u32>, Statistics> txrx{};
+    void ProcessIPv4(this auto& self, const uint16_t length, const ip& iheader, HeaderView& view) {
+      const Config& cfg = self.config;
+      const net_u32 src = static_cast<net_u32>(iheader.ip_src.s_addr);
+      const net_u32 dst = static_cast<net_u32>(iheader.ip_dst.s_addr);
+
+      auto [src_allowed, dst_allowed] = self._is_allowed(src, dst);
+      bool txrx_allowed{false};
+      for (const auto& sn: cfg.txrxsubnets) {
+        if (sn.contains(src) || sn.contains(dst)) {
+          txrx_allowed = true;
+          break;
+        }
+      }
+
+      if (!src_allowed && !dst_allowed && !txrx_allowed) {
+        return;
+      }
+      StatField proto = nullptr;
+      StatField subproto = nullptr;
+      switch (iheader.ip_p) {
+      case IPPROTO_ICMP:
+        proto = &Statistics::icmp;
+        break;
+      case IPPROTO_TCP:
+        {
+          proto = &Statistics::tcp;
+          // If we decide to track HTTP-over-UDP (quic or similar), then this needs to move outside the switch.
+          view.skip_forward(iheader.ip_hl * 4 - sizeof(ip));
+          const tcphdr& tcp = view.next_header<tcphdr>();
+
+          subproto = Statistics::GetSubProto(static_cast<net_u16>(tcp.th_sport));
+          if (subproto == nullptr) {
+            subproto = Statistics::GetSubProto(static_cast<net_u16>(tcp.th_dport));
+          }
+        }
+        break;
+      case IPPROTO_UDP:
+        proto = &Statistics::udp;
+        break;      
+      }
+
+      if (src_allowed) {
+        auto& rec = self.ips[src].Sent;
+        rec.packet_count++;
+        rec.total += length;
+        if (proto != nullptr) {
+          rec.*proto += length;
+          if (subproto != nullptr) {
+            rec.*subproto += length;
+          }
+        }
+      }
+
+      if (dst_allowed) {
+        auto& rec = self.ips[dst].Received;
+        rec.packet_count++;
+        rec.total += length;
+        if (proto != nullptr) {
+          rec.*proto += length;
+          if (subproto != nullptr) {
+            rec.*subproto += length;
+          }
+        }
+      }
+
+      if (txrx_allowed) {
+        auto& rec = self.txrx[{src,dst}];
+        rec.packet_count++;
+        rec.total += length;
+        if (proto != nullptr) {
+          rec.*proto += length;
+          if (subproto != nullptr) {
+            rec.*subproto += length;
+          }
+        }
+      }
+    }
+  };
+}

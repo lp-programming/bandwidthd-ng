@@ -1,0 +1,71 @@
+module;
+export module Config;
+import EnumFlags;
+import SubnetIdentifier;
+import Constants;
+
+import <vector>;
+import <string>;
+import <chrono>;
+export using EnumFlags::FlagSet;
+using namespace std::chrono_literals;
+
+
+export enum class GraphInterval {
+  None = 0,
+  Classic = 1,
+  Minute = 2, 
+  Hour = 4, 
+  Day = 8,
+  Week = 16,
+  Month = 32,
+  Year = 64
+};
+
+export struct GraphIntervals : FlagSet<GraphInterval> {
+  using Intervals = FlagSet<GraphInterval>;
+  constexpr GraphIntervals(Intervals F): Intervals(F) {}
+};
+
+export constexpr GraphIntervals operator|(const GraphInterval l, const GraphInterval r) {
+  return GraphIntervals{static_cast<GraphInterval>(static_cast<uint32_t>(l) | static_cast<uint32_t>(r))};
+}
+
+
+export class Config {
+public:
+  std::string dev{};
+  std::string filter{"tcp"};
+  bool promisc{true};
+
+  uint8_t tag;
+
+  int snaplen{65535};
+
+  GraphIntervals graph_intervals{GraphInterval::None};
+
+  uint32_t skip_intervals{0};
+  uint64_t graph_cutoff{0};
+  bool graph_individual_ips{true};
+
+  bool output_cdf{false};
+  bool recover_cdf{false};
+
+  std::chrono::seconds interval{30s};
+  
+  std::chrono::seconds meta_refresh{MINUTE};
+  
+  std::string sqlite_connect_string{};
+  std::string psql_connect_string{};
+  std::string sensor_name{};
+  std::string log_dir{};
+  std::string htdocs_dir{};
+  std::string description{};
+  std::string management_url{};
+  
+  std::vector<SubnetIdentifier> subnets{};
+  std::vector<SubnetIdentifier> notsubnets{};
+  std::vector<SubnetIdentifier> txrxsubnets{};
+
+  std::string syslog_prefix{};
+};
