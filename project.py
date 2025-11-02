@@ -1,4 +1,4 @@
-from pybuild import target, cppm, cppms, find_cppms, cpp, func, system_headers, proc, write_module_map, colorama
+from pybuild import target, cppm, cppms, find_cppms, cpp, func, system_headers, proc, write_module_map, colorama, stubs
 from pybuild.library_search import find_library, find_python
 
 import pathlib

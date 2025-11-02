@@ -15,14 +15,13 @@ import <optional>;
 import <unistd.h>;
 import <ranges>;
 import <functional>;
+import <type_traits>;
 
 using namespace std::chrono_literals;
 using namespace bandwidthd;
 
-namespace __cxxabiv1 {
-  std::terminate_handler __terminate_handler = +[]() {
-    std::abort();
-  };
+consteval bool HasSqlite() {
+  return !std::is_empty_v<SqliteDB>;
 }
 
 
@@ -71,11 +70,13 @@ public:
         base.pg_cursor.value().get().SerializeData(base.ips, base.txrx, base.config.interval, now);
         base.pg_cursor.value().get().SerializeData(base.ips6, base.txrx6, base.config.interval, now);
       }
-      if (base.sq_cursor) {
-        std::println("sending to sqlite");
+      if constexpr (HasSqlite()) {
+        if (base.sq_cursor) {
+          std::println("sending to sqlite");
                           
-        base.sq_cursor.value().get().SerializeData(base.ips, base.txrx, base.config.interval, now);
-        base.sq_cursor.value().get().SerializeData(base.ips6, base.txrx6, base.config.interval, now);
+          base.sq_cursor.value().get().SerializeData(base.ips, base.txrx, base.config.interval, now);
+          base.sq_cursor.value().get().SerializeData(base.ips6, base.txrx6, base.config.interval, now);
+        }
       }
 
       if (! (count++ % (base.config.skip_intervals + 1))) {
@@ -145,13 +146,22 @@ int Main(const std::vector<std::string>& args) {
     pg_cursor.emplace(config);
   }
 
-  std::optional<Cursor<SqliteDB>> sq_cursor{};
-  if (!config.sqlite_connect_string.empty()) {
-    sq_cursor.emplace(config);
+  using SqliteCursor = std::conditional_t<
+    HasSqlite(),
+    Cursor<SqliteDB>,
+    SqliteDB
+    >;
+
+
+  std::optional<SqliteCursor> sq_cursor{};
+  if constexpr (HasSqlite()) {
+    if (!config.sqlite_connect_string.empty()) {
+      sq_cursor.emplace(config);
+    }
   }
   
   Memory memory{config};
-  ClassicSensor<Memory, Cursor<PostgresDB>, Cursor<SqliteDB>> sensor{config, memory, pg_cursor, sq_cursor};
+  ClassicSensor<Memory, Cursor<PostgresDB>, SqliteCursor> sensor{config, memory, pg_cursor, sq_cursor};
   if (background && fork()) {
     return 0;
   }

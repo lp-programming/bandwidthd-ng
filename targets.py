@@ -9,6 +9,10 @@ PYLIB = f"lib/PyBandwidthD{find_python() or '.so'}"
 find_pqxx = partial(find_library, "libpq", ("-lpq", "-lpqxx"), "-lpqxx")
 find_sqlite = partial(find_library, "SQLiteCpp", ("-lsqlite3", "-lSQLiteCpp"), pkgconfig=False)
 
+if not find_sqlite():
+    cppms.update(stubs['Sqlite'])
+    find_sqlite = lambda: []
+
 targets.update( cppms | {
     "all": target({
         "doc": "Default meta target - builds everything we can",
@@ -51,7 +55,7 @@ targets.update( cppms | {
         doc="This is the classic version, which does everything in one binary",
         path="classic/Classic.cpp",
         out="bin/bandwidthd",
-        requirements=[find_pqxx, find_sqlite],
+        requirements=[find_pqxx],
         args=["-lpcap", func(find_pqxx), func(find_sqlite)]
     ),
     "classic": target({
