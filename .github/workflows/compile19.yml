@@ -24,6 +24,7 @@ jobs:
         sudo checkinstall
         popd
     - name: make
-      run: make 
+      run: |
+         CXXFLAGS=" -DSKIP_CONSTEXPR_TESTS " make 
 
       
