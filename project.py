@@ -50,7 +50,7 @@ target.common_args = [
     "-fmodule-map-file=/usr/include/c++/v1/module.modulemap",
     *[f"-fmodule-map-file={target.project/i}" for i in target.module_maps],
     f"-fmodules-cache-path={target.build}/modules",
-    "-flto",
+    "-flto=thin",
     "-Wold-style-cast",
     "-Wall",
     "-Wextra",
