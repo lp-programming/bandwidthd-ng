@@ -26,6 +26,6 @@ jobs:
         popd
     - name: make
       run: |
-         CXXFLAGS=" -DSKIP_CONSTEXPR_TESTS " make 
+         CC=clang-19 CXX=clang++-19 CXXFLAGS=" -DSKIP_CONSTEXPR_TESTS " make 
 
       
