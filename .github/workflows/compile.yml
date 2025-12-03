@@ -13,6 +13,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
     - name: deps
       run: |
         sudo apt-get purge libc++-18-dev clang-18
