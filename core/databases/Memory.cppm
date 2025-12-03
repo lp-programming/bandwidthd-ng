@@ -7,6 +7,7 @@ import <algorithm>;
 import <vector>;
 import <ranges>;
 import <numeric>;
+import <format>;
 
 import net_integer;
 import SummaryData;
