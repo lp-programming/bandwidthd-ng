@@ -15,8 +15,8 @@ jobs:
     - uses: actions/checkout@v4
     - name: deps
       run: |
-        sudo apt-get install checkinstall pybind11-dev libpq-dev libc++-19-dev clang-19 libpcap-dev
         sudo apt-get purge libc++-18-dev clang-18
+        sudo apt-get install checkinstall pybind11-dev libpq-dev libc++-19-dev clang-19 libpcap-dev
         git clone https://github.com/jtv/libpqxx
         mkdir libpqxx/build
         pushd libpqxx/build
