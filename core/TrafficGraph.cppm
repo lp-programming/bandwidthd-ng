@@ -6,6 +6,7 @@ import <chrono>;
 import <format>;
 import <array>;
 import <ranges>;
+import <cstdint>;
 
 import static_for;
 import string_util;
