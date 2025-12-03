@@ -118,7 +118,7 @@ sensor_id "com.example.sensorN"
 # same as php and classic uses. I think libpqxx will read environment variables
 # for this, but this string must be non-empty to enable graphing.
 pgsql_connect_string "user = un dbname = db host = example.com"
-
+#+end_src
 
 3. Start bandwidthd-ng. If you pass ~-D~ it won't fork, which will make error
    identification easier. Wait 200 seconds, then check psql, you should see
