@@ -1,5 +1,6 @@
 export module Statistics;
 import <string>;
+import <cstdint>;
 
 import net_integer;
 

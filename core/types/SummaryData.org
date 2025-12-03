@@ -6,6 +6,7 @@ struct, with time information attached to it. As such, you can add Statistics to
 export module SummaryData;
 import <chrono>;
 import <string>;
+import <cstdint>;
 
 import Statistics;
 namespace bandwidthd {

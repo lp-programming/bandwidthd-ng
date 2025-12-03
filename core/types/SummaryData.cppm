@@ -1,6 +1,7 @@
 export module SummaryData;
 import <chrono>;
 import <string>;
+import <cstdint>;
 
 import Statistics;
 namespace bandwidthd {

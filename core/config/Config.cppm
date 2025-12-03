@@ -2,6 +2,7 @@ export module Config;
 import <vector>;
 import <string>;
 import <chrono>;
+import <cstdint>;
 
 import EnumFlags;
 import SubnetIdentifier;

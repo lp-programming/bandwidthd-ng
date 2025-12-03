@@ -7,6 +7,7 @@ import <array>;
 import <sstream>;
 import <chrono>;
 import <vector>;
+import <format>;
 
 import Config;
 import string_util;

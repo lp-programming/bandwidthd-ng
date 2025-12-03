@@ -58,6 +58,7 @@ target.common_args = [
     "-Wsign-conversion",
     "-Wsign-compare",
     "-Wpedantic",
+    "-Wno-zero-length-array",
     *CXXFLAGS,
 ]
 

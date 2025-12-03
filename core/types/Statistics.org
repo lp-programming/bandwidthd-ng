@@ -5,6 +5,7 @@ This is the raw struct for storing the summary data. GetSubProto lives here beca
 #+begin_src cpp :tangle Statistics.cppm
 export module Statistics;
 import <string>;
+import <cstdint>;
 
 import net_integer;
 

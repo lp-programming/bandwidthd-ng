@@ -2,6 +2,7 @@ export module SubnetIdentifier;
 import <charconv>;
 import <string_view>;
 import <netinet/ip.h>;
+import <system_error>;
 
 import net_integer;
 import uint128_t;

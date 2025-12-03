@@ -86,6 +86,5 @@ targets.update( cppms | {
     }),
 })
 
-targets[next(targets["SubnetIdentifier"].deps)]['args'].append('-Wno-zero-length-array')
 
 
