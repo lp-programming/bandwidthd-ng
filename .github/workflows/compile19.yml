@@ -24,6 +24,6 @@ jobs:
         sudo checkinstall
         popd
     - name: make
-      run: make -j
+      run: make 
 
       
