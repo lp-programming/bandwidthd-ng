@@ -26,6 +26,6 @@ jobs:
         popd
     - name: make
       run: |
-        CC=clang-20 CXX=clang++-20 CXXFLAGS=" -DSKIP_CONSTEXPR_TESTS " make -j
+        CC=clang-20 CXX=clang++-20 CXXFLAGS=" -DSKIP_CONSTEXPR_TESTS " make -j `nproc` bin/graph bin/demo bin/live bin/classic bin/psqlsensor
 
       
