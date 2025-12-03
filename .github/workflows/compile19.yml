@@ -1,4 +1,4 @@
-name: C++ CI
+name: C++ CI Clang-19
 
 on:
   push:
