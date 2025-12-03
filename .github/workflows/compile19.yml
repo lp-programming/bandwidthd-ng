@@ -19,8 +19,8 @@ jobs:
         git clone https://github.com/jtv/libpqxx
         mkdir libpqxx/build
         pushd libpqxx/build
-        CC=clang-20 CXX=clang++-20 CXXFLAGS=" -stdlib=libc++ " cmake .. -DBUILD_TEST=OFF
-        CC=clang-20 CXX=clang++-20 CXXFLAGS=" -stdlib=libc++ " make -j `nproc`
+        CC=clang-20 CXX=clang++-19 CXXFLAGS=" -stdlib=libc++ " cmake .. -DBUILD_TEST=OFF
+        CC=clang-20 CXX=clang++-19 CXXFLAGS=" -stdlib=libc++ " make -j `nproc`
         sudo checkinstall
         popd
     - name: make
