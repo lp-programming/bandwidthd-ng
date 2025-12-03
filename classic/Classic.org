@@ -1,3 +1,8 @@
+* Classic Bandwidthd
+This is the main entry point for the classic mode. It aims to be fully compatible with the original version. If you want
+to build it once and decide at runtime which features to enable, this is the target to build.
+
+#+begin_src c++ :tangle "Classic.cpp"
 import BandwidthD;
 import Parser;
 import Memory;
@@ -18,8 +23,29 @@ import <functional>;
 
 import <unistd.h>;
 
+#+end_src
+
+** Using namespaces
+Everything library-related in bandwidthd is in the ~bandwidthd~ namespace. We'll use most of it, so just use the whole
+namespace. We could put our symbols inside it, too, but there's not a major reason to do so for applications.
+
+~std::chrono::literals~ lets you write ~200s~ to mean 200 seconds. We could grab /just/ the seconds, but there are no
+collisions with other literal namespaces.
+
+#+begin_src c++ :tangle "Classic.cpp"
+
 using namespace std::chrono_literals;
 using namespace bandwidthd;
+
+#+end_src
+
+** HasSqlite / HasPostgres
+These are consteval (compile-time only) functions which determine if we're building with the database drivers or the
+stubs. The type checker gets kinda testy about names /missing/, so the stubs give an empty version of the class, which
+we can detect here.
+
+#+begin_src c++ :tangle "Classic.cpp"
+
 
 consteval bool HasSqlite() {
   return !std::is_empty_v<SqliteDB>;
@@ -28,6 +54,17 @@ consteval bool HasSqlite() {
 consteval bool HasPostgres() {
   return !std::is_empty_v<PostgresDB>;
 }
+
+#+end_src
+** ClassicSensor
+These are probably the worst 22 lines in the project. ClassicSensor is a CRTP Sensor, which holds a refernce to each of
+3 database drivers. It uses the core default IPv4 and IPv6 processor, rather than supplying its own packet processing
+function.
+
+~maybe_ref~ allows compile time /or/ runtime selection between an empty optional or the real database.  
+
+#+begin_src c++ :tangle "Classic.cpp"
+
 
 template<typename MEM, typename PG_CURSOR, typename SQ_CURSOR>
 class ClassicSensor: public Sensor<ClassicSensor<MEM, PG_CURSOR, SQ_CURSOR>, Modes::BothDefault>  {
@@ -57,6 +94,22 @@ public:
     pg_cursor(maybe_ref(pg_cursor)),
     sq_cursor(maybe_ref(sq_cursor)) {}
 
+#+end_src
+
+** Main Loop
+This is the top level loop. All configuration is done before we get here (RAII).
+It's possible to initialize multiple sensors in the same process, so they have a ~poll~ based async poll / step. This
+probably /should/ use epoll, but the overhead for a single fd is low enough to not warrant the extra complexity.
+Since the classic version only starts a single sensor, we just spin on it.
+
+~Poll~ optionally takes the number of seconds to wait, which defaults to ~1s~. It turns errno into an exception if the
+~poll~ call fails. Every so often (~200s~ by default), the inner loop ends and collated data is recorded or graphed.
+
+
+
+#+begin_src c++ :tangle "Classic.cpp"
+
+
   int Run(this auto& base) {
     uint32_t count{0};
     for (;;) {
@@ -72,6 +125,13 @@ public:
         base.mem.CollateData(base.ips6, base.txrx6, base.config.interval);
       }
 
+#+end_src
+*** Sql Outputs
+
+If one of the sql backends is disabled, the ~if constexpr~ blocks will not be compiled. Otherwise this turns into a
+runtime check to see if the sql backend is currently active.
+
+#+begin_src c++ :tangle "Classic.cpp"
       if constexpr (HasPostgres()) {
         if (base.pg_cursor) {
           base.pg_cursor.value().get().SerializeData(base.ips, base.txrx, base.config.interval, now);
@@ -84,6 +144,15 @@ public:
           base.sq_cursor.value().get().SerializeData(base.ips6, base.txrx6, base.config.interval, now);
         }
       }
+#+end_src
+*** Graphing
+We output standard hd svgs. Since they're svgs, they're infinitely resizeable, but this makes the text nicely readable
+at the default zoom on modern displays. To allow passing parameters by name, the graph config is its own standard-layout
+type. This requires the ~{{ ... }}~. The actual graph generation is done by the in-memory database driver.
+
+TODO: Write cdf to file instead of stdout.
+
+#+begin_src c++ :tangle "Classic.cpp"
 
       if (! (count++ % (base.config.skip_intervals + 1))) {
         if (base.config.graph_intervals) {
@@ -102,6 +171,13 @@ public:
           cdf_file << cdf << "\n";
         }
       }
+#+end_src
+*** Resetting
+Each vector of ip data needs clearing after every interval. The persistent data is kept inside ~mem~. These attributes
+are checked by the compiler. Initially this was done via casting ~*this~ to ~Sensor&~, but C++23's /deducing this/ gives
+a slightly easier means of letting the compiler verify the names are correct.
+
+#+begin_src c++ :tangle "Classic.cpp"
 
       base.ips.clear();
       base.ips6.clear();
@@ -111,6 +187,16 @@ public:
     return 0;
   }
 };
+
+#+end_src
+
+** CPP Main
+This is the C++ entry point. It creates and owns all the top level objects, and ensures they are correctly configured
+before launching the main loop. This would be where to set up additional sensors in a more complex version.
+It also forks to the background and writes its pidfile.
+
+#+begin_src c++ :tangle "Classic.cpp"
+
 
 int Main(const std::vector<std::string>& args) {
   Config config{};
@@ -150,6 +236,14 @@ int Main(const std::vector<std::string>& args) {
     return 1;
   }
 
+#+end_src
+*** Cursor Check
+~std::conditional_t~ Returns 1 of 2 types based on the predicate. In this case, we check if either of our db drivers are
+empty. If they are, we use the empty type as our stubbed cursor. Otherwise we set up our cursor + driver type. This one
+/doesn't/ rely on crtp, as the relationship is uni-directional.
+
+#+begin_src c++ :tangle "Classic.cpp"
+
   using PostgresCursor = std::conditional_t<
     HasPostgres(),
     Cursor<PostgresDB>,
@@ -187,13 +281,30 @@ int Main(const std::vector<std::string>& args) {
   Memory memory{config};
   ClassicSensor<Memory, Cursor<PostgresDB>, SqliteCursor> sensor{config, memory, pg_cursor, sq_cursor};
 
+#+end_src
+*** Fork
+If we're supposed to run in the background, this is where to do it.
+
+#+begin_src c++ :tangle "Classic.cpp"
+
+
   if (background && fork()) {
     return 0;
   }
   return sensor.Run();
 }
+#+end_src
+
+** main
+
+This is the portable main entry. It just builds a vector of args and calls Main. Adding platform-specific entries
+would be fairly straightforward, to just forward the startup.
+
+#+begin_src c++ :tangle "Classic.cpp"
 
 int main(const int argc, const char * const * const argv) {
   const std::vector<std::string> args{argv, argv + argc};
   return Main(args);
 }
+
+#+end_src

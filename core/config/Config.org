@@ -1,3 +1,5 @@
+* Config
+#+begin_src c++ :tangle Config.cppm
 export module Config;
 import <vector>;
 import <string>;
@@ -69,3 +71,5 @@ public:
 
   std::string syslog_prefix{};
 };
+#+end_src
+

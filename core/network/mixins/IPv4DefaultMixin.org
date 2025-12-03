@@ -1,3 +1,9 @@
+* IPv4DefaultMixins
+This provides a default implementation for processing IPv4 packets. It uses an ~unordered_map~, as that is usually
+smaller for this data size, and we have a /perfect/ hash function, so performance is pretty similar for the usual sizes
+we encounter. Note we store the IPs in network-byte-order.
+
+#+begin_src c++ :tangle IPv4DefaultMixin.cppm
 export module IPv4DefaultMixin;
 import net_integer;
 import HeaderView;
@@ -99,3 +105,4 @@ namespace bandwidthd {
     }
   };
 }
+#+end_src

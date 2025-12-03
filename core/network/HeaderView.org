@@ -1,3 +1,23 @@
+* HeaderView
+This is by far the ugliest and worst code in this project. Strictly, it was legal ISO C++ prior to C++20, since the
+underlying objects were properly allocated by the kernel via kmalloc or similar, and have had their initialization done
+by the kernel. Starting with C++20, only ~calloc~ and ~malloc~ portably start object lifetimes. I see that as a
+significant defect in the ISO C++ spec, since the underlying behavior of ~kmalloc~ doesn't magically change when you
+write your userspace code in C++26. So this module assumes, but cannot prove, the buffer contains a properly initialized
+ethernet packet object.
+
+Even then, the standard only guarantees correct behavior if you treat the objects as their correct type (an ethernet
+packet), or as an array of ~std::byte~ (with a C-style char array as an acceptable stand-in for the latter). Using
+~std::array<char>~ and ~std::span~ /sucks/ compared to ~std::string_view~, especially on platforms which require copies
+for aligned access. So that makes this module fully non-conforming and non-portable. But it works with clang, and I'd
+rather deal with non-portability than spans for this.
+
+For platforms which have 0-cost access to unaligned data, we just cast to the underlying objects in-place. Otherwise, we
+make a copy and cast there. We /could/ use interning to detect when we've already created each object, but the memory
+cost to duplicate them is generally less than the computation required to reuse them.
+
+Note that on alignment-required platforms, the ~HeaderView~ must outlive the last referenced header.
+#+begin_src c++ :tangle HeaderView.cppm
 export module HeaderView;
 
 import <string>;
@@ -90,3 +110,4 @@ namespace bandwidthd {
     }
   };
 }
+#+end_src

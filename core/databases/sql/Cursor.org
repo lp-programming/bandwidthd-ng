@@ -1,3 +1,8 @@
+* Cursor
+This is the top level sql interface for bandwidthd. It can talk through psql or sqlite. Adding other sql backends would
+be fairly simple, so long as they support the same format of argument substitution.
+
+#+begin_src c++ :tangle Cursor.cppm
 export module Cursor;
 import <array>;
 import <string_view>;
@@ -20,14 +25,22 @@ namespace bandwidthd {
     CONN& connection;
     const Config& config;
     int sensor_id{};
-
+#+end_src
+** Statements
+Each sql driver needs to adapt the generic query strings into the correct format (postgres uses $1, $2, ..., sqlite
+uses ? for all). Since the query strings don't change, we can precalculate them.
+#+begin_src c++ :tangle Cursor.cppm
     CONN::prepared_t bd_tx_insert = connection.prepare("INSERT INTO bd_tx_log values ($$, $$, $$, $now, $$, $$, $$, $$, $$, $$, $$, $$, $$, $$);");
     CONN::prepared_t bd_rx_insert = connection.prepare("INSERT INTO bd_rx_log values ($$, $$, $$, $now, $$, $$, $$, $$, $$, $$, $$, $$, $$, $$);");
     CONN::prepared_t bd_tx_rx_insert = connection.prepare("INSERT INTO bd_tx_rx_log values ($$, $$, $$, $$, $now, $$, $$, $$, $$, $$, $$, $$, $$, $$, $$);");
     CONN::prepared_t get_sensor = connection.prepare("SELECT * FROM sensors WHERE sensor_name = $$ AND interface = $$");
     CONN::prepared_t new_sensor = connection.prepare("INSERT INTO sensors (sensor_name, interface) VALUES ($$, $$);");
     CONN::prepared_t update_sensor = connection.prepare("UPDATE sensors SET description = $$, management_url = $$, last_connection = now(), build = $$, uptime = $$*interval '1 second' where sensor_id = $$;");
-
+#+end_src
+** Validate
+This should make a database layout similar enough to the original bandwidthd to allow inter-operation. Note that the
+sqlite driver will decay any of the field types it doesn't recognize (like timestamp_with_timezone) into strings.
+#+begin_src c++ :tangle Cursor.cppm
     void validate() {
       auto txn = connection.begin();
       txn.exec("CREATE TABLE IF NOT EXISTS sensors ( sensor_id serial PRIMARY KEY, sensor_name varchar, location int, build int default 0, uptime interval, reboots int default 0, interface varchar, description varchar, management_url varchar, last_connection timestamp_with_timezone );");
@@ -70,6 +83,13 @@ namespace bandwidthd {
       txn.commit();
     }
 
+#+end_src
+** Serialize
+About as straightforward as it gets. Formay the time in a way either database can understand, then extract each entry
+and send it to the database. If anything goes wrong, ~txn~ falls out of scope without committing and the transaction
+rolls back.
+#+begin_src c++ :tangle Cursor.cppm
+
     void SerializeData(this auto& self, const auto& IPs, const auto& both, const std::chrono::seconds duration, const auto now) {
       auto d = duration.count();
       auto txn = self.connection.begin();
@@ -106,6 +126,12 @@ namespace bandwidthd {
 
       txn.commit();
     }
+#+end_src
+** TODO GetData
+The standalone grapher needs to pull data back out. This part is psql-only, but generalizing it wouldn't be too
+difficult.
+
+#+begin_src c++ :tangle Cursor.cppm
 
     std::vector<SummaryData> GetData(const std::string_view start,
                                      const std::string_view end,
@@ -159,3 +185,5 @@ namespace bandwidthd {
   };
 
 }
+
+#+end_src

@@ -1,3 +1,6 @@
 [submodule "submodules/pybuild"]
 	path = submodules/pybuild
 	url = https://github.com/lp-programming/pybuild
+[submodule "submodules/lpprogramming-cppm"]
+	path = submodules/lpprogramming-cppm
+	url = https://github.com/lp-programming/lpprogramming-cppm

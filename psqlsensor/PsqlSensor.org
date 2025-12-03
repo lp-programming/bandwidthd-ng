@@ -1,62 +1,55 @@
-import BandwidthD;
-import Memory;
-import TrafficGraph;
-import Syslog;
-import format_ip;
+* PsqlSensor
+This is the counterpart to Live. It /only/ sends output to postgres, which lets it run with a /very/ small footprint. It
+doesn't track more than the /current/ frame of data. 
 
-import <chrono>;
-import <string>;
-import <print>;
-import <vector>;
+#+begin_src c++ :tangle PsqlSensor.cpp
+import Postgres;
+import BandwidthD;
+import format_ip;
+import Cursor;
+import Syslog;
+
 import <unordered_map>;
-import <array>;
+import <print>;
 
 using namespace std::chrono_literals;
 using namespace bandwidthd;
 using namespace lpprogramming;
-
 using Logger = lpprogramming::Syslog::Logger;
 
-template<typename DB>
-class MemorySensor: public Sensor<MemorySensor<DB>, Modes::BothDefault>  {
+
+template<typename CURSOR>
+class DatabaseWritingSensor: public Sensor<DatabaseWritingSensor<CURSOR>, Modes::BothDefault>  {
+  CURSOR& cursor;
 public:
-
-  DB db;
-  MemorySensor& base;
-  MemorySensor(Config& config): Sensor<MemorySensor<DB>, Modes::BothDefault>(config), db{config}, base(*this) { }
-
-  int Main() {
-    uint32_t count{0};
+  DatabaseWritingSensor(Config& config, CURSOR& cursor): Sensor<DatabaseWritingSensor<CURSOR>,
+                                                                Modes::IPv4Default | Modes::IPv6Default>(config),
+                                                         cursor(cursor) { }
+  int Main(this auto& base) {
     for (;;) {
       const auto starttime = std::chrono::system_clock::now();
-      while ((std::chrono::system_clock::now() - starttime) < base.config.interval) {
-        if (this->Poll()) {
-          this->Step();
+      auto now = std::chrono::system_clock::now();
+
+      while (((now = std::chrono::system_clock::now()) - starttime) < base.config.interval) {
+        if (base.Poll()) {
+          base.Step();
         }
       }
-      count++;
-      db.CollateData(base.ips, base.txrx, base.config.interval);
+      base.cursor.SerializeData(base.ips, base.txrx, base.config.interval, now);
       base.ips.clear();
       base.txrx.clear();
-      db.CollateData(base.ips, base.txrx6, base.config.interval);
+      base.cursor.SerializeData(base.ips6, base.txrx6, base.config.interval, now);
       base.ips.clear();
       base.txrx6.clear();
-      if (! (count++ % (base.config.skip_intervals + 1))) {
-        TrafficGraph grapher{{.width=1920, .height=1080, .left_margin=150, .top_margin=100, .bottom_margin=50, .right_margin=50}};
-        db.Graph(grapher);
-      }
-      return 1;
     }
     return 0;
   } 
 };
 
-int Main(const size_t argc, const char * const * const argv) {
+int Main(const uint argc, const char * const * const argv) {
   Config config{};
-  config.graph_intervals = GraphIntervals{GraphInterval::Hour};
-  config.htdocs_dir = "/tmp/bdcpp/htdocs";
   config.interval = 200s;
-  config.syslog_prefix = "bandwidthd-live";
+  config.syslog_prefix = "bandwidthd";
 
   const std::vector<std::string> args{argv, argv + argc};
   if (argc < 5 || !(argc % 2)) {
@@ -78,6 +71,7 @@ int Main(const size_t argc, const char * const * const argv) {
     }
     else if (arg == std::string{"--subnet"}) {
       auto& sn = config.subnets.emplace_back(args.at(i + 1uz));
+      //            syslog(LOG_INFO, "Monitoring subnet %s with netmask %s", inet_ntoa(addr), inet_ntoa(addr2));
 
       Logger::info(std::format("Monitoring subnet {} with netmask {}",
                                util::format_ip(sn.ip, sn.family),
@@ -97,12 +91,14 @@ int Main(const size_t argc, const char * const * const argv) {
     }
   }
 
-  MemorySensor<Memory> sensor{config};
-  
-  
+  Cursor<PostgresDB> db{config};
+  DatabaseWritingSensor<Cursor<PostgresDB>> sensor{config, db};
   return sensor.Main();
 }
 
 int main(const int argc, const char * const * const argv) {
   return Main(static_cast<const size_t>(argc), argv);
 }
+
+
+#+end_src

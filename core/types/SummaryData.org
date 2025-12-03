@@ -1,3 +1,8 @@
+* SummaryData
+This is used to aggregate data together for graphing and similar tasks. It's basically the same as the ~Statistics~
+struct, with time information attached to it. As such, you can add Statistics to it directly.
+
+#+begin_src cpp :tangle SummaryData.cppm
 export module SummaryData;
 import <chrono>;
 import <string>;
@@ -101,3 +106,4 @@ namespace bandwidthd {
     }
   };
 }
+#+end_src

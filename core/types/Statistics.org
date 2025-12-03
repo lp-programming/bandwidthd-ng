@@ -1,3 +1,8 @@
+* Statistics
+This is the raw struct for storing the summary data. GetSubProto lives here because it needs visibility into the
+~StatField~. It could probably be tucked away in its own file, but this is simple enough it's fine.
+
+#+begin_src cpp :tangle Statistics.cppm
 export module Statistics;
 import <string>;
 
@@ -58,3 +63,5 @@ namespace bandwidthd {
 
   };
 }
+
+#+end_src

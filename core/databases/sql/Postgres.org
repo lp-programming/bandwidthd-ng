@@ -1,3 +1,7 @@
+* Postgres
+This is the postgres driver. pqxx is already well adapted to this execution model, so the only real work is formatting
+the query arguments.
+#+begin_src c++ :tangle Postgres.cppm
 export module Postgres;
 import <format>;
 export import <pqxx/pqxx>;
@@ -48,3 +52,20 @@ public:
   }
   
 };
+
+#+end_src
+
+** Stub
+If we are building without sqlite support, then we just need an empty module stub to include elsewhere.
+
+#+begin_src c++ :tangle PostgresStub.cppm
+export module Postgres;
+
+export
+class PostgresDB  {
+public:
+  PostgresDB(auto&) {}
+
+};
+
+#+end_src

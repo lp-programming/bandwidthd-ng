@@ -2,46 +2,38 @@ import Postgres;
 import BandwidthD;
 import format_ip;
 import Cursor;
+import Syslog;
 
 import <unordered_map>;
-import <vector>;
-import <utility>;
-import <chrono>;
-import <exception>;
-import <optional>;
-import <unistd.h>;
+import <print>;
 
 using namespace std::chrono_literals;
 using namespace bandwidthd;
-
+using namespace lpprogramming;
+using Logger = lpprogramming::Syslog::Logger;
 
 
 template<typename CURSOR>
 class DatabaseWritingSensor: public Sensor<DatabaseWritingSensor<CURSOR>, Modes::BothDefault>  {
-public:
-
   CURSOR& cursor;
-  DatabaseWritingSensor& base;
-  DatabaseWritingSensor(Config& config, CURSOR& cursor): Sensor<DatabaseWritingSensor<CURSOR>, Modes::IPv4Default | Modes::IPv6Default>(config), cursor(cursor), base(*this) {
-    
-    
-  }
-
-  int Main() {
+public:
+  DatabaseWritingSensor(Config& config, CURSOR& cursor): Sensor<DatabaseWritingSensor<CURSOR>,
+                                                                Modes::IPv4Default | Modes::IPv6Default>(config),
+                                                         cursor(cursor) { }
+  int Main(this auto& base) {
     for (;;) {
       const auto starttime = std::chrono::system_clock::now();
       auto now = std::chrono::system_clock::now();
 
       while (((now = std::chrono::system_clock::now()) - starttime) < base.config.interval) {
-        if (this->Poll()) {
-          this->Step();
+        if (base.Poll()) {
+          base.Step();
         }
       }
-      std::println("flushing");
-      cursor.SerializeData(base.ips, base.txrx, base.config.interval, now);
+      base.cursor.SerializeData(base.ips, base.txrx, base.config.interval, now);
       base.ips.clear();
       base.txrx.clear();
-      cursor.SerializeData(base.ips6, base.txrx6, base.config.interval, now);
+      base.cursor.SerializeData(base.ips6, base.txrx6, base.config.interval, now);
       base.ips.clear();
       base.txrx6.clear();
     }
@@ -96,13 +88,9 @@ int Main(const uint argc, const char * const * const argv) {
 
   Cursor<PostgresDB> db{config};
   DatabaseWritingSensor<Cursor<PostgresDB>> sensor{config, db};
-  
-  
   return sensor.Main();
 }
 
-extern "C" {
-  int main(const int argc, const char * const * const argv) {
-    return Main(static_cast<const ssize_t>(argc), argv);
-  }
+int main(const int argc, const char * const * const argv) {
+  return Main(static_cast<const size_t>(argc), argv);
 }

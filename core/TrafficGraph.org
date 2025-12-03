@@ -1,3 +1,9 @@
+* TrafficGraph
+This is module generates graphs from vectors of summary data. If you give it a const vector, it makes a copy internally.
+If you are going to discard the vector immediately after, you can give it a non-const vector and it will munge the
+contents. This saves you a copy. Most of the time, this is what you want.
+
+#+begin_src c++ :tangle "TrafficGraph.cppm"
 export module TrafficGraph;
 import <string>;
 import <vector>;
@@ -15,6 +21,12 @@ import SummaryData;
 
 using namespace lpprogramming;
 using lpprogramming::util::static_for;
+#+end_src
+** Colors
+This configures the colors for graphing. Note that the Total Color is not used unless the caller zeroes out one or more
+of the constituent parts. These colors match the colors from the C version of the original grapher.
+
+#+begin_src c++ :tangle "TrafficGraph.cppm"
 
 namespace {
   constexpr const std::string COLOR_ICMP{"#FF0000"};   // Red
@@ -28,6 +40,15 @@ namespace {
 
   constexpr const char* PATH_START = "<path fill='{}' opacity='0.7' stroke-width='0' d='";
 }
+
+#+end_src
+** GraphConfig
+This exists entirely to allow named initialization. Note that SVGs are 0,0 at the top left, so graphs from the bottom
+right require calculating positions. SVGs are essentially infinitely scalable, but the values need to work together.
+The defaults make a graph with similar style to the original, while scaled up for modern screens. The biggest tunable
+parameter is the font size.
+
+#+begin_src c++ :tangle "TrafficGraph.cppm"
 
 namespace bandwidthd {
   struct GraphConfig {
@@ -43,6 +64,14 @@ namespace bandwidthd {
     const double y_padding = 1.05;
   };
 
+#+end_src
+** Layers
+This constexpr array ties the label to the color value to the field. TCP and Total get special cased when we use this
+later. Nominally, Total is the sum of the other fields and TCP is the sum of mail, p2p, http, and ftp. The caller can
+combine or skip graphing those fields by setting them to 0s in the input vector. This will omit them entirely from the
+generated svg. If you need to optimize for storage space, this can matter.
+
+#+begin_src c++ :tangle "TrafficGraph.cppm"  
   namespace {
     struct Layer {
       const std::string_view name;
@@ -61,6 +90,20 @@ namespace bandwidthd {
     };
 
   }
+
+#+end_src
+** Tuples and Generic Programming
+Often, data is generated together. Each sent entry usually has a received entry with the same timestamp. The in-memory
+db stores these in named pairs, since they must be stored in a map. When graphing, you could split these into two
+vectors, but then each one would need to be iterated. When pulling data back from databases, you usually only get either
+the tx or the rx data. So the grapher needs to be able to handle either 1 or 2 streams of input data. Potentially, a
+caller also might want to graph tx_rx data from various pairs of IPs, and extending this from 2-way to generate all
+graphs in parallel is fairly trivial. This helper handles extracting the Nth value from each element. All of this is
+expanded at compile time. Which means if you want to support N-way vector graphs in python, you need to explicitly
+initialize the sizes desired in the wrapper. 
+
+#+begin_src c++ :tangle "TrafficGraph.cppm"
+
 
   template <typename DATA, std::size_t N>
   constexpr const auto& get_unit(const DATA& d) {
@@ -81,6 +124,12 @@ namespace bandwidthd {
       return d;
     }
   }
+#+end_src
+*** data_size_v
+If the target supports checking its size via ~tuple_size~, we use that, otherwise we treat it as a single data entry.
+This is ~consteval~ to ensure it's compile-time only. Anything that could otherwise silently become runtime will fail to
+compile.
+#+begin_src c++ :tangle "TrafficGraph.cppm"
 
   template <typename DATA>
   consteval std::size_t data_size_v() {
@@ -91,6 +140,16 @@ namespace bandwidthd {
       return 1;
     }
   }
+
+#+end_src
+** TrafficGraph
+This is the only exported type in this module. It has 1 public constructor, and one public override set for actually
+rendering. If ~DATA~ is a tuple-type, the return is a ~vector<string>~, otherwise it's a single ~string~ containing the
+svg data. The timestamps are expected to align, and the generated graphs use the same axis values.
+
+The const version makes a copy of the input vector and passes it to the non-const version.
+
+#+begin_src c++ :tangle "TrafficGraph.cppm"
 
   export
   class TrafficGraph {
@@ -111,6 +170,13 @@ namespace bandwidthd {
                 const std::chrono::system_clock::time_point end_time) const {
       using namespace std::chrono;
 
+#+end_src
+*** Rendering
+Unfortunately, we need to auto-scale the graph. This means we must iterate through the input data twice. In the first
+pass we find the peak data rate, since that determines the output graph's y-axis max. Then we can go through the input
+vector again, generating the boxes.
+
+#+begin_src c++ :tangle "TrafficGraph.cppm"
       const auto row_count = data_rows.size();
       constexpr std::size_t N = data_size_v<DATA>();
 
@@ -119,6 +185,11 @@ namespace bandwidthd {
       std::array<SummaryData, N> total{};
 
       SummaryData peak_peak{};
+#+end_src
+Note: the for-loop order is *always* data-rows in the outer loop and column-n in the inner. If you reverse this order,
+it will iterate the whole input vector N times, and the compiler *won't* save you. ~static_for~ is /always/ unrolled.
+
+#+begin_src c++ :tangle "TrafficGraph.cppm"
 
       for (DATA& row : data_rows) {
         static_for<N>([&]<std::size_t n>(std::integral_constant<std::size_t, n>) {
@@ -134,7 +205,11 @@ namespace bandwidthd {
             peak_peak << r;
           });
       }
-
+#+end_src
+This can over-provison, since we skip any empty rectangles. Avoiding that would require counting the zero-entries while
+normalizing, which isn't worth doing unless you have extreme memory pressure (in which case, you're probably better off
+turning the output into an ostream and writing to the output files incrementally).
+#+begin_src c++ :tangle "TrafficGraph.cppm"
       int days = duration_cast<std::chrono::days>(end_time - start_time).count();
       if (days < 0) {
         days = 0;
@@ -175,6 +250,10 @@ namespace bandwidthd {
 
       }
     }
+#+end_src
+*** Headers
+
+#+begin_src c++ :tangle "TrafficGraph.cppm"
 
   private:
     void write_header(std::vector<std::string>& svg,
@@ -190,6 +269,10 @@ namespace bandwidthd {
 
       draw_axes(svg, start_time, end_time, y_max);
     }
+#+end_src
+*** Axis
+This draws the axis lines, as well as 20% guides on the y-axis and interval ticks on the x axis. 
+#+begin_src c++ :tangle "TrafficGraph.cppm"
 
     void draw_axes(std::vector<std::string>& svg,
                   const std::chrono::system_clock::time_point start_time,
@@ -258,6 +341,12 @@ namespace bandwidthd {
       const double total = (end_time - start_time).count();
       return elapsed / total * w + cfg.left_margin;
     }
+#+end_src
+*** Draw Stacked Lines
+Each non-zero entry is added to each graph via an svg rectangle, stacked on top of the previous traffic types. Once
+again, we might over provision since we'll drop empty segments.
+
+#+begin_src c++ :tangle "TrafficGraph.cppm"
 
     template<typename DATA>
     void draw_stacked_lines(const std::vector<DATA>& data_rows, auto& svgs, const auto& start_time, const auto& end_time, const auto y_max) const {
@@ -272,7 +361,12 @@ namespace bandwidthd {
             paths[n][i].push_back(std::format(PATH_START, layers[i].color));
           });
       }
+#+end_src
+**** Ys
+For each data point, we start at the bottom of the graph, which is actually our highest Y value. Every time we draw a
+box, we set the next 0 point to the top of this box.
 
+#+begin_src c++ :tangle "TrafficGraph.cppm"
       std::array<double, N> y0s{};
 
       for (const DATA& d : data_rows) {
@@ -335,6 +429,14 @@ namespace bandwidthd {
         });
   
     }
+
+#+end_src
+*** Draw Box
+Each box is 4 line segments, starting from the top left. We move to this spot instead of drawing from the end of the
+previous path. We could draw it all with the pen down the whole way, but that would require special casing the first
+rectangle in each column.
+
+#+begin_src c++ :tangle "TrafficGraph.cppm"
 
     void drawBox(std::vector<std::string>& svgpath, double x0, double x1, double y0, double y1) const {
       svgpath.push_back("\n");
@@ -433,3 +535,6 @@ namespace bandwidthd {
     }   
   };
 }
+
+
+#+end_src

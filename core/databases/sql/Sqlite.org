@@ -1,3 +1,9 @@
+* Sqlite
+Unlike the psql version, the C++ Sqlite wrapper doesn't naturally support the connection->cursor->transaction->exec
+model. So we provide that via a shim. It /mostly/ works, but the exec method is defined on statements rather than on
+transactions. Also arguments have to be explicitly bound in advance, and cleared after.
+
+#+begin_src c++ :tangle Sqlite.cppm
 export module Sqlite;
 import <limits>;
 import <ranges>;
@@ -51,6 +57,11 @@ struct Transaction {
     return txn.commit();
   }
 };
+
+#+end_src
+** Cursor
+With the transaction shim already made, the cursor is pretty much the same as psql's version.
+#+begin_src c++ :tangle Sqlite.cppm
 
 class Col {
   SQLite::Column col;
@@ -125,3 +136,20 @@ public:
 
   
 };
+
+#+end_src
+
+** Stub
+If we are building without sqlite support, then we just need an empty module stub to include elsewhere.
+
+#+begin_src c++ :tangle SqliteStub.cppm
+export module Sqlite;
+
+export
+class SqliteDB  {
+public:
+  SqliteDB(auto&) {}
+
+};
+
+#+end_src

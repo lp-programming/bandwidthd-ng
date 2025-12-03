@@ -1,4 +1,3 @@
-module;
 export module Sqlite;
 
 export
@@ -7,4 +6,3 @@ public:
   SqliteDB(auto&) {}
 
 };
-

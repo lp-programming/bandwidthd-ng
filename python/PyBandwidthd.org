@@ -1,3 +1,8 @@
+* PyBandwidthd
+If you want to support arbitrary databases, or provide mac addresses or other labels in real-time, this is the way to do
+it. It also gives you access to the SVG generator, either with data pulled from databases, or live data.
+
+#+begin_src c++ :tangle PyBandwidthd.cpp
 import BandwidthD;
 import format_ip;
 import SubnetIdentifier;
@@ -169,3 +174,5 @@ PYBIND11_MODULE(PyBandwidthD, m) {
 
     
   }
+
+#+end_src

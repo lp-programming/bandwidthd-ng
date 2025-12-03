@@ -1,3 +1,9 @@
+* IPv4DefaultMixins
+This provides a default implementation for processing IPv6 packets. It uses an ~unordered_map~, as that is usually
+smaller for this data size, and we have a /perfect/ hash function, so performance is pretty similar for the usual sizes
+we encounter. Note we store the IPs in network-byte-order.
+
+#+begin_src c++ :tangle IPv6DefaultMixin.cppm
 export module IPv6DefaultMixin;
 import <netinet/tcp.h>;
 import <netinet/ip6.h>;
@@ -111,3 +117,4 @@ namespace bandwidthd {
     }
   };
 }
+#+end_src

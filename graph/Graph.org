@@ -1,3 +1,8 @@
+* Graph
+This program generates graphs from stored entries in postgres. It would be fairly straightforward to have this parse cdf
+or Sqlite entries, but for now only psql is supported.
+
+#+begin_src c++ :tangle Graph.cpp
 import Postgres;
 import Config;
 import parse_date;
@@ -76,3 +81,4 @@ extern "C" {
     return Main(argc, argv);
   }
 }
+#+end_src

@@ -1,3 +1,9 @@
+* BandwidthD
+This is the core of bandwidthd-ng. It handles talking to libpcap, and presents a pollable interface to downstream code.
+For most applications, the default IPv4 and IPv6 processors are sufficient (see the demo project for an example of /not/
+using the default). 
+
+#+begin_src c++ :tangle BandwidthD.cppm
 export module BandwidthD;
 export import Config;
 export import Statistics;
@@ -35,6 +41,12 @@ using Logger = lpprogramming::Syslog::Logger;
 
 using lpprogramming::SyscallHelper::Syscall;
 using lpprogramming::SyscallHelper::failure_message;
+#+end_src
+** ModeFlags
+This controls if libpcap reports events for IPv4 or IPv6. At least one processing mode must be specified, which is
+compile-time enforced by a constraint.
+
+#+begin_src c++ :tangle BandwidthD.cppm
 
 namespace bandwidthd {
   using EnumFlags::FlagSet;
@@ -123,6 +135,21 @@ namespace bandwidthd {
     }
   };
 
+#+end_src
+** Sensor
+This uses CRTP from the chosen mixins to enable default handling. It also is /itself/ a CRTP template for applications
+to use. Unfortunately, CRTP relies on /Duck Typing/, and gives you a fairly opaque error message when the derived type
+doesn't supply a required member of the implicit interface.  Historically, you could make that interface explicit by
+having the derived type inherit from a pure abstract base class, and count on the compiler de-virtualizing it (with
+mixed success). However C++23 concepts let us specify the requirements of the interface explicitly, generting nice error
+messages immediately.
+
+Writing the constraint itself is messy, at least without C++26 reflection, but using it is easy. In this case, we
+enforce the CRTP derived type has a ~ProcessIPvX~ method for each IP type it wants to see. This ensures you have a
+complete and working type, even if the compiler never generates the code that /requires/ the interface elements. In this
+way, we avoid the case where adding a function call to ~Step()~ breaks things that aren't obviously related to it.
+
+#+begin_src c++ :tangle BandwidthD.cppm
   export
   template <typename BD, Modes M = {Modes::IPv4Default}>
   class Sensor : public IPv4Mixin<BD,M>, public IPv6Mixin<BD,M> {
@@ -267,3 +294,4 @@ namespace bandwidthd {
 
   };
 }
+#+end_src

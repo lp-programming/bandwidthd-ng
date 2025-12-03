@@ -1,8 +1,7 @@
-module;
 export module VlanHeader;
 
 import net_integer;
-using types::net_integer::net_u16;
+using lpprogramming::types::net_integer::net_u16;
 
 export 
 class VlanHeader {

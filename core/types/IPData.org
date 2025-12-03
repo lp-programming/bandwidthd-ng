@@ -1,3 +1,8 @@
+* IPData
+This is the fresh-collected data. So it lacks the duration and timestamp
+fields. 
+
+#+begin_src cpp :tangle IPData.cppm
 export module IPData;
 import <string>;
 
@@ -15,3 +20,5 @@ namespace bandwidthd {
     Statistics Received;
   };
 }
+
+#+end_src

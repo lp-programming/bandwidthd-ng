@@ -1,3 +1,6 @@
+* Constants
+Type-aware constants, based on the values from the old bandwidthd.h
+#+begin_src c++ :tangle Constants.cppm
 export module Constants;
 import <chrono>;
 import <net/ethernet.h>;
@@ -17,3 +20,5 @@ export constexpr std::chrono::seconds YEAR{DAY * 365};
 export constexpr net_u16 ETHER_VLAN{net_u16::from_host(ETHERTYPE_VLAN)};
 export constexpr net_u16 ETHER_IPV4{net_u16::from_host(ETHERTYPE_IP)};
 export constexpr net_u16 ETHER_IPV6{net_u16::from_host(ETHERTYPE_IPV6)};
+
+#+end_src

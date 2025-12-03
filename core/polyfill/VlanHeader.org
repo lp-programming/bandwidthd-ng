@@ -1,0 +1,18 @@
+* VlanHeader
+This type is defined in the kernel sources, but not normally available in userspace. Rather than pulling in kernel
+headers, we just duplicate the type here. Note that the numbers are in network byte order.
+
+#+begin_src c++ :tangle VlanHeader.cppm
+export module VlanHeader;
+
+import net_integer;
+using lpprogramming::types::net_integer::net_u16;
+
+export 
+class VlanHeader {
+public:
+  net_u16   vlan_tag;     /* vlan tag information */
+  net_u16   encapsulated_proto;
+};
+
+#+end_src

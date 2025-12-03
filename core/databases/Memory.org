@@ -1,3 +1,8 @@
+* Memory Datastore
+This is the in-memory datastore, responsible for generating cdf output, and live-graphing. It automatically drops any
+data old enough that it isn't needed for any graphs, and compresses older data.
+
+#+begin_src c++ :tangle Memory.cppm
 export module Memory;
 import <map>;
 import <filesystem>;
@@ -23,6 +28,18 @@ using namespace lpprogramming;
 using types::net_integer::net_u128;
 using types::net_integer::net_u16;
 using types::net_integer::net_u32;
+
+#+end_src
+** Summary Pairs
+TX and RX data is generated in pairs with the /same/ timestamps, so we store them linked together. You could split them,
+and save a litle space at the expense of significantly slower graph generation. Since the Grapher wants tuple-like data,
+we provide ~get<I>~ for the data pairs.
+
+Note that tx and timestamp live in a union, so that timestamp is the common-initializer-sequence. This lets our filter
+later /see/ into tx, without increasing ~sizeof(SummaryPair)~.
+#+begin_src c++ :tangle Memory.cppm
+
+
 
 struct SummaryPair {
   SummaryData tx{};
@@ -56,6 +73,13 @@ namespace std {
 }
 
 using std::get;
+#+end_src
+** Memory
+For each subnet, we track the subnet total per frame. This saves us repeatedly summing the same data later. We also use
+a tree-map for each ip->data-series. If you're traking more than about 10k IPs, an unordered_map will perform a bit
+better, but will take more memory. After the first few minutes, map inserts are rare, so performance depends almost
+entirely on lookup time.
+#+begin_src c++ :tangle Memory.cppm
 
 namespace bandwidthd {
   export
@@ -68,6 +92,15 @@ namespace bandwidthd {
 
   public:
     Memory(const Config& c) : cfg(c) {}
+#+end_src
+*** Graphing
+First, we graph the subnet totals, then we graph individual ips. This handles sorting out what IPs should be graphed,
+then calls the private ~graph()~ to carry out the actual graphing. Since the grapher munges the input data, we give it a
+copy.
+
+Note that we total the /entire/ input series, rather than only back as far as we are graphing, because ~Cleanup()~ will
+discard anything old enough for us to ignore.
+#+begin_src c++ :tangle Memory.cppm
 
     void Graph(auto& grapher) {
       const auto now = std::chrono::system_clock::now();
@@ -121,7 +154,13 @@ namespace bandwidthd {
         graph(grapher, now, svgname, sd_copy);
       }
     }
-
+#+end_src
+**** TODO Avoid generating sub-graphs with no data
+For each enabled graphing period, we generate a graph, even if the IP exchanged no data during the graphing period. In
+theory, the pairs are in time-order, so we could count backwards to find the smallest interval where the total passes
+the graph cutoff. It would be best to do that from the outer call, rather than calculating the total twice. It would
+require iterating the data in reverse. Something to do with ~std::ranges~.
+#+begin_src c++ :tangle Memory.cppm
   private:
     void graph(auto& grapher, auto& now, auto svgname, std::vector<SummaryPair>& sp) {
       std::filesystem::path htdocs { cfg.htdocs_dir };
@@ -187,6 +226,12 @@ namespace bandwidthd {
       }
       return now - YEAR;
     }
+#+end_src
+*** Cleanup
+We only graph back a year, so anything older than that gets expunged. For data up to a year, we re-aggregate it based on
+graph resolutions.
+
+#+begin_src c++ :tangle Memory.cppm
 
     void cleanup(const auto now) {
       std::chrono::time_point oldest = get_cutoff(now);
@@ -201,7 +246,12 @@ namespace bandwidthd {
         cleanup(sp, now, oldest);
       }
     }
+#+end_src
 
+The simplest option would be to make a temporary vector, but since we're shrinking the vector, and the input data is
+sorted, we can just do it in-place, which helps keep memory use low.
+
+#+begin_src c++ :tangle Memory.cppm
     void cleanup(auto& sp, const auto now, const auto oldest) {
       using namespace std::chrono;
       struct AggregationLevel {
@@ -312,7 +362,14 @@ namespace bandwidthd {
       return ipv6[ip];
     }
   public:
-
+#+end_src
+*** MakeCdf
+This turns the internal state into a cdf, which /could/ be parsed back. It would be more efficient to simply output the
+last entry, but this method handles aging-out old data automaticaly.
+**** TODO Refactor out repetition.
+This handles the 3 series of dat by direct code duplication. It really should use a ~static_for~ or similar to ensure
+the output formats stay consistent
+#+begin_src c++ :tangle Memory.cppm
     std::string MakeCdf() {
       std::vector<std::string> frags{};
       for (auto& [sni, sp] : subnets) {
@@ -421,6 +478,14 @@ namespace bandwidthd {
       return util::string_concat(frags);
 
     }
+#+end_src
+*** CollateData
+Every packet gets added to the current set of summary datas. At the end of each frame, we need to take those totals and
+push them onto our vectors for long term storage. Also, anything old enough to aggregate gets aggregated each frame.
+This is slightly wasteful, as the oldest entries can only get dropped once a day, and week-old data can only aggregate
+once an hour. However this is either cheap enough to run every frame, or it is too expensive to run (and would need to
+run in its own thread).
+#+begin_src c++ :tangle Memory.cppm
 
     void CollateData(const auto& IPs, const auto&, const std::chrono::seconds duration) {
       const auto now = std::chrono::system_clock::now();
@@ -462,3 +527,5 @@ namespace bandwidthd {
     }
   };
 }
+
+#+end_src

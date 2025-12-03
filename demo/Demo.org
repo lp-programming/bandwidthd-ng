@@ -1,3 +1,9 @@
+* Demo
+This is the most basic application. It doesn't track any information, parse a config, or anything remotely complex. It
+just prints to stdout whenever a pcap event fires. It serves as an example if you want to implement your own processing
+call back, and a first target when porting to a new platform, but isn't really /useful/ itself.
+
+#+begin_src c++ :tangle Demo.cpp
 import <vector>;
 import <string>;
 import <print>;
@@ -70,3 +76,6 @@ int Main(int argc, char **argv) {
 int main(int argc, char **argv) {
   return Main(argc, argv);
 }
+
+#+end_src
+

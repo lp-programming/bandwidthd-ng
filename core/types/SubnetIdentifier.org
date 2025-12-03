@@ -1,3 +1,10 @@
+* SubnetIdentifier
+SubnetIdentifiers consist of the base ip and mask, and either represent an IPv4 or IPv6 subnet. They can be constructed
+via CIDR notation or by explicitly setting the mask. The same data structure is used for both IPv4 and IPv6 subnets, so
+that they are the same width. The IPv4 subnet uses the lower 32bits for storage. Both the base address and mask are
+stored in network-byte-order. 
+
+#+begin_src c++ :tangle SubnetIdentifier.cppm
 export module SubnetIdentifier;
 import <charconv>;
 import <string_view>;
@@ -115,3 +122,4 @@ private:
     return SubnetIdentifier{ip, mask, AF_INET6};
   }
 };
+#+end_src

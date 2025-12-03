@@ -1,3 +1,9 @@
+* Live
+This is very similar to the Graph code, but instead of loading the data from the database, this captures it in real-time
+and genrates live graphs. If you need visualized output on a system without postgres, this is basically the same as the
+classic program, just without he database tie-in.
+
+#+begin_src c++ :tangle Live.cpp
 import BandwidthD;
 import Memory;
 import TrafficGraph;
@@ -106,3 +112,5 @@ int Main(const size_t argc, const char * const * const argv) {
 int main(const int argc, const char * const * const argv) {
   return Main(static_cast<const size_t>(argc), argv);
 }
+
+#+end_src
