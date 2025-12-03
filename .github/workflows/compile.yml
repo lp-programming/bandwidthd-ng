@@ -15,12 +15,12 @@ jobs:
     - uses: actions/checkout@v4
     - name: deps
       run: |
-        sudo apt-get install checkinstall pybind11-dev libpq-dev libc++-19-dev clang-19 libsqlite3-dev libsqlite3-dev libpcap-dev
+        sudo apt-get install checkinstall pybind11-dev libpq-dev libc++-20-dev clang-20 libpcap-dev
         git clone https://github.com/jtv/libpqxx
         mkdir libpqxx/build
         pushd libpqxx/build
-        CC=clang-19 CXX=clang++-19 CXXFLAGS=" -stdlib=libc++ " cmake .. -DBUILD_TEST=OFF
-        CC=clang-19 CXX=clang++-19 CXXFLAGS=" -stdlib=libc++ " make -j `nproc`
+        CC=clang-20 CXX=clang++-20 CXXFLAGS=" -stdlib=libc++ " cmake .. -DBUILD_TEST=OFF
+        CC=clang-20 CXX=clang++-20 CXXFLAGS=" -stdlib=libc++ " make -j `nproc`
         sudo checkinstall
         popd
     - name: make
