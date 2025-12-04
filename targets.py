@@ -8,6 +8,11 @@ PYLIB = f"lib/PyBandwidthD{find_python() or '.so'}"
 def linker_args(mode="debug"):
     return target.linker_args[mode]
 
+def not_portable(mode):
+    if mode == "portable":
+        print("Disabling component in portable build")
+    return mode != "portable"
+
 targets.update( cppms | {
     "all": target({
         "doc": "Default meta target - builds everything we can",
@@ -37,14 +42,14 @@ targets.update( cppms | {
         path="graph/Graph.cpp",
         out="bin/graph",
         requirements=[find_pqxx],
-        args=[func(linker_args), "-lpcap", func(find_pqxx)]
+        args=[func(linker_args), "-lpcap", link(func(find_pqxx))]
     ),
     "bin/psqlsensor": cpp(
         doc="This is a minimal sensor that only can send data to postgres",
         path="psqlsensor/PsqlSensor.cpp",
         out="bin/psqlsensor",
         requirements=[find_pqxx],
-        args=[func(linker_args), "-lpcap", func(find_pqxx)]
+        args=[func(linker_args), "-lpcap", link(func(find_pqxx))]
     ),
     "bin/bandwidthd": cpp(
         doc="This is the classic version, which does everything in one binary",
@@ -67,7 +72,7 @@ targets.update( cppms | {
         doc="This version exposes basic functionality through python",
         path="python/PyBandwidthd.cpp",
         out=PYLIB,
-        requirements=[find_pqxx, find_python],
+        requirements=[find_pqxx, not_portable],
         args=[func(linker_args), "-lpcap", link(func(find_pqxx)), proc("python3-config", "--includes", "--ldflags", "--embed"), "-Wno-old-style-cast", "-shared"]
     ),
     "setup": target({
