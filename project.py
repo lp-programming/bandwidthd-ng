@@ -1,5 +1,5 @@
-from pybuild import target, cppm, cppms, find_cppms, cpp, func, system_headers, proc, write_module_map, colorama, stubs
-from pybuild.library_search import find_library, find_python
+from pybuild import target, cppm, cppms, find_cppms, cpp, system_headers, func, link, proc, write_module_map, colorama,stubs
+from pybuild.library_search import find_library, find_python, check_abi, ABIS
 
 import pathlib
 import time
@@ -14,11 +14,18 @@ target.module_maps[0] = target.build / "modules.map"
 
 target.modes['release'] = [
     "-O3",
+    "-march=native"
+]
+
+target.modes['portable'] = [
+    "-O3",
+    "-march=core2"
 ]
 
 target.modes['debug'] = [
     "-O2",
     "-ggdb3",
+    "-march=native"
 ]
 
 target.modes['asan'] = target.modes['debug'] + [
