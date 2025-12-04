@@ -3,15 +3,10 @@ This is a procedural config file.
 
 """
 from project import *
-from functools import partial
 PYLIB = f"lib/PyBandwidthD{find_python() or '.so'}"
 
-find_pqxx = partial(find_library, "libpq", ("-lpq", "-lpqxx"), "-lpqxx")
-find_sqlite = partial(find_library, "SQLiteCpp", ("-lsqlite3", "-lSQLiteCpp"), pkgconfig=False)
-
-if not find_sqlite():
-    cppms.update(stubs['Sqlite'])
-    find_sqlite = lambda: []
+def linker_args(mode="debug"):
+    return target.linker_args[mode]
 
 targets.update( cppms | {
     "all": target({
@@ -29,7 +24,7 @@ targets.update( cppms | {
         doc="The simplest version, which just prints status messages to stdout",
         path="demo/Demo.cpp",
         out="bin/demo",
-        args=["-lpcap"]
+        args=[func(linker_args), "-lpcap"]
     ),
     "bin/live": cpp(
         doc="This version draws live graphs",
@@ -42,21 +37,21 @@ targets.update( cppms | {
         path="graph/Graph.cpp",
         out="bin/graph",
         requirements=[find_pqxx],
-        args=["-lpcap", func(find_pqxx)]
+        args=[func(linker_args), "-lpcap", func(find_pqxx)]
     ),
     "bin/psqlsensor": cpp(
         doc="This is a minimal sensor that only can send data to postgres",
         path="psqlsensor/PsqlSensor.cpp",
         out="bin/psqlsensor",
         requirements=[find_pqxx],
-        args=["-lpcap", func(find_pqxx)]
+        args=[func(linker_args), "-lpcap", func(find_pqxx)]
     ),
     "bin/bandwidthd": cpp(
         doc="This is the classic version, which does everything in one binary",
         path="classic/Classic.cpp",
         out="bin/bandwidthd",
-        requirements=[find_pqxx],
-        args=["-lpcap", func(find_pqxx), func(find_sqlite)]
+        optionals=[check_sqlite, check_pqxx],
+        args=[func(linker_args), "-lpcap", link(func(find_pqxx)), link(func(find_sqlite))]
     ),
     "classic": target({
         "doc":"As close to the original bandwidthd as we can get",
@@ -73,7 +68,7 @@ targets.update( cppms | {
         path="python/PyBandwidthd.cpp",
         out=PYLIB,
         requirements=[find_pqxx, find_python],
-        args=["-lpcap", func(find_pqxx), proc("python3-config", "--includes", "--ldflags", "--embed"), "-Wno-old-style-cast", "-shared"]
+        args=[func(linker_args), "-lpcap", link(func(find_pqxx)), proc("python3-config", "--includes", "--ldflags", "--embed"), "-Wno-old-style-cast", "-shared"]
     ),
     "setup": target({
         "virtual": True,

@@ -33,6 +33,42 @@ target.modes['asan'] = target.modes['debug'] + [
   "-fno-omit-frame-pointer"
 ]
 
+target.linker_args['portable'] = [
+    "-nostdlib++",
+    "-Wl,-Bstatic",
+    "-lc++",
+    "-lc++abi",
+    "-Wl,-Bdynamic",
+]
+
+
+def portable(*libs):
+    statics = []
+    others = []
+    for l in libs:
+        abi, static = check_abi(l)
+        if abi == ABIS.C:
+            if static:
+                statics.append(l)
+            else:
+                others.append(l)
+        else:
+            if not static:
+                raise RuntimeError("Cannot make a portable executable because C++ library", l, "is not static linkable")
+            statics.append(l)
+    if statics:
+        return [
+            *others,
+            "-Wl,-Bstatic",
+            *statics,
+            "-Wl,-Bdynamic"
+        ]
+    else:
+        return others
+
+
+target.linker['portable'] = portable
+
 CXXFLAGS = os.environ.get('CXXFLAGS', os.environ.get('CFLAGS', []))
 if CXXFLAGS:
     CXXFLAGS = shlex.split(CXXFLAGS)
@@ -43,11 +79,12 @@ if "clang++" not in CXX:
           colorama.Back.BLACK,
           "This project uses clang's implicit modules system. Compilers other than clang++ are unlikely to work.",
           colorama.Style.RESET_ALL)
+
+
     
 target.common_args = [
     CXX,
     "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS=true",
-    "-march=native",
     "-std=c++26",
     "-stdlib=libc++",
     "-fPIC",
@@ -115,3 +152,45 @@ targets = {
     }),
 }
     
+def check_pqxx(mode="debug"):
+    if not find_pqxx(mode=mode):
+        targets.pop(targets['Postgres']['deps'][0])
+        targets.update(stubs['Postgres'])
+        cppms.update(stubs['Postgres'])
+        return stubs['Postgres']
+    return []
+
+def check_sqlite(mode="debug"):
+    if not find_sqlite(mode):
+        print("sqlite not available")
+        targets.pop(targets['Sqlite']['deps'][0])
+        targets.update(stubs['Sqlite'])
+        cppms.update(stubs['Sqlite'])
+        return stubs['Sqlite']
+    return []
+
+def find_sqlite(mode="debug", res = {}):
+    r = res.get(mode, None)
+    if r is not None:
+        return r
+    r = find_library("SQLiteCpp", ("-lsqlite3", "-lSQLiteCpp"), pkgconfig=False)
+    if mode == "portable" and r:
+        abi, static = check_abi("-lSQLiteCpp")
+        if not static:
+            print("cannot use shared sqlite in portable build, disabling sqlite")
+            r = []
+    res[mode] = r
+    return r
+
+def find_pqxx(mode="debug", res = {}):
+    r = res.get(mode, None)
+    if r is not None:
+        return r
+    r = find_library("libpq", ("-lpq", "-lpqxx"), "-lpqxx")
+    if mode == "portable" and r:
+        abi, static = check_abi("-lpqxx")
+        if not static:
+            print("cannot use shared pqxx in portable build, disabling psql")
+            r = []
+    res[mode] = r
+    return r
