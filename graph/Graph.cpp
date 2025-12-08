@@ -71,8 +71,6 @@ int Main(int argc, char **argv) {
   return 0;
 }
 
-extern "C" {
-  int main(int argc, char **argv) {
-    return Main(argc, argv);
-  }
+int main(int argc, char **argv) {
+  return Main(argc, argv);
 }

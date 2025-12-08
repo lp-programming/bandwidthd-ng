@@ -1,6 +1,9 @@
-from pybuild import target, cppm, cppms, find_cppms, cpp, system_headers, func, link, proc, write_module_map, colorama,stubs
-from pybuild.library_search import find_library, find_python, check_abi, ABIS
+from pybuild import target, cppm, cppms, find_cppms, cpp, system_headers, func, pkg, proc, write_module_map, colorama, stubs, CXX
+from pybuild.library_search import find_python, Library, Package, ABIS, static, shared
+from linker_settings import get_linker_settings
+from dataclasses import dataclass, field
 
+import subprocess
 import pathlib
 import time
 import os
@@ -11,7 +14,6 @@ target.pymodules.append(sys.modules['project'])
 
 target.module_maps[0] = target.build / "modules.map"
 
-
 target.modes['release'] = [
     "-O3",
     "-march=native"
@@ -21,6 +23,12 @@ target.modes['portable'] = [
     "-O3",
     "-march=core2"
 ]
+
+target.modes['c_abi'] = [
+    "-O3",
+    "-march=core2"
+]
+
 
 target.modes['debug'] = [
     "-O2",
@@ -33,7 +41,7 @@ target.modes['asan'] = target.modes['debug'] + [
   "-fno-omit-frame-pointer"
 ]
 
-target.linker_args['portable'] = [
+target.linker_args['c_abi'] = target.linker_args['portable'] = [
     "-nostdlib++",
     "-Wl,-Bstatic",
     "-lc++",
@@ -42,32 +50,10 @@ target.linker_args['portable'] = [
 ]
 
 
-def portable(*libs):
-    statics = []
-    others = []
-    for l in libs:
-        abi, static = check_abi(l)
-        if abi == ABIS.C:
-            if static:
-                statics.append(l)
-            else:
-                others.append(l)
-        else:
-            if not static:
-                raise RuntimeError("Cannot make a portable executable because C++ library", l, "is not static linkable")
-            statics.append(l)
-    if statics:
-        return [
-            *others,
-            "-Wl,-Bstatic",
-            *statics,
-            "-Wl,-Bdynamic"
-        ]
-    else:
-        return others
 
+def linker_args(mode):
+    return target.linker_args.get(mode, [])
 
-target.linker['portable'] = portable
 
 CXXFLAGS = os.environ.get('CXXFLAGS', os.environ.get('CFLAGS', []))
 if CXXFLAGS:
@@ -80,8 +66,6 @@ if "clang++" not in CXX:
           "This project uses clang's implicit modules system. Compilers other than clang++ are unlikely to work.",
           colorama.Style.RESET_ALL)
 
-
-    
 target.common_args = [
     CXX,
     "-D_LIBCPP_DISABLE_DEPRECATION_WARNINGS=true",
@@ -103,11 +87,11 @@ target.common_args = [
     "-Wsign-compare",
     "-Wpedantic",
     "-Wno-zero-length-array",
+    "-pthread",
     *CXXFLAGS,
 ]
 
 find_cppms(__file__)
-
 
 def dist_clean(t):
     module_clean(t)
@@ -123,7 +107,7 @@ def module_clean(t):
             (p/f).unlink()
         p.rmdir()
     return True
-    
+
 
 def clean(t):
     print("cleaning")
@@ -151,46 +135,84 @@ targets = {
         "virtual": True
     }),
 }
-    
-def check_pqxx(mode="debug"):
-    if not find_pqxx(mode=mode):
-        targets.pop(targets['Postgres']['deps'][0])
-        targets.update(stubs['Postgres'])
-        cppms.update(stubs['Postgres'])
-        return stubs['Postgres']
-    return []
 
-def check_sqlite(mode="debug"):
-    if not find_sqlite(mode):
+@dataclass
+class PackageDescription(pkg):
+    name: str
+    pkgconf_flags:tuple[str] = ()
+    libs: tuple[str] = ()
+    Libs: tuple[str] = ()
+    ld_flags: tuple[str] = ()
+    c_flags: tuple[str] = ()
+    abis: tuple[ABIS] = (ABIS.C, ABIS.libcxx)
+    package: {str:Package} = field(default_factory=dict)
+
+    def validate(self, mode):
+        return self.getPackage(mode).validate(mode)
+
+    def getCFlags(self, mode):
+        return self.getPackage(mode).getCFlags(mode)
+    def getLDFlags(self, mode):
+        p = self.getPackage(mode)
+        
+        return p.getLDFlags(mode, link_mode=get_linker_settings(mode).get("default", shared))
+
+    def getPackage(self, mode="debug"):
+        package = self.package.get(mode, None)
+        if package:
+            return package
+        ls = get_linker_settings(mode)
+        if mode in ["portable", "c_abi"]:
+            strategy = static
+        else:
+            strategy = shared
+        package = Package.find_package(self.name, self.pkgconf_flags, self.abis, link_mode=strategy, link_mode_map=ls)
+        if package.found:
+            if mode == "portable" and self.name == "libpqxx":
+                l = Library("-lpgcommon_shlib", search_path, [], [ABIS.C], link_mode=static)
+                print(l)
+                package.libs.append(l)
+            self.package[mode] = package
+            return package
+        else:
+            print("Could not find", self.name, "via pkgconf, falling back to pseudo-package")
+            found = True
+            libs = []
+            for lib in self.libs:
+                library = Library(lib, self.Libs, self.ld_flags, self.abis, link_mode_map = ls)
+                if not library.found:
+                    found = False
+                libs.append(library)
+            package = self.package[mode] = Package(
+                found=found,
+                name=self.name,
+                cflags=self.c_flags,
+                ldflags=[*self.Libs, *self.ld_flags],
+                libraries=libs,
+                link_mode_map=ls)
+            return package
+
+search_path = [f"-L{p}" for p in shlex.split(
+    subprocess.run([CXX, "--print-search-dirs"], stdout=subprocess.PIPE).stdout.decode('utf-8'))[-1][1:].split(':')]
+
+pqxx = PackageDescription("libpqxx",
+                          libs=("-lpqxx", "-lpq"),
+                          Libs=search_path)
+pcap = PackageDescription("libpcap",
+                          libs=("-lpcap"),
+                          Libs=search_path)
+sqlitecpp = PackageDescription("libsqlitecpp",
+                          libs=("-lSQLiteCpp", "-lsqlite3"),
+                          Libs=search_path)
+
+def verify_sqlite(mode):
+    if sqlitecpp.validate(mode):
+        return []
+    else:
         print("sqlite not available")
         targets.pop(targets['Sqlite']['deps'][0])
         targets.update(stubs['Sqlite'])
         cppms.update(stubs['Sqlite'])
         return stubs['Sqlite']
-    return []
 
-def find_sqlite(mode="debug", res = {}):
-    r = res.get(mode, None)
-    if r is not None:
-        return r
-    r = find_library("SQLiteCpp", ("-lsqlite3", "-lSQLiteCpp"), pkgconfig=False)
-    if mode == "portable" and r:
-        abi, static = check_abi("-lSQLiteCpp")
-        if not static:
-            print("cannot use shared sqlite in portable build, disabling sqlite")
-            r = []
-    res[mode] = r
-    return r
-
-def find_pqxx(mode="debug", res = {}):
-    r = res.get(mode, None)
-    if r is not None:
-        return r
-    r = find_library("libpq", ("-lpq", "-lpqxx"), "-lpqxx")
-    if mode == "portable" and r:
-        abi, static = check_abi("-lpqxx")
-        if not static:
-            print("cannot use shared pqxx in portable build, disabling psql")
-            r = []
-    res[mode] = r
-    return r
+ 

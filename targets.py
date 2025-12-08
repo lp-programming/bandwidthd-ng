@@ -5,8 +5,6 @@ This is a procedural config file.
 from project import *
 PYLIB = f"lib/PyBandwidthD{find_python() or '.so'}"
 
-def linker_args(mode="debug"):
-    return target.linker_args[mode]
 
 def not_portable(mode):
     if mode == "portable":
@@ -29,34 +27,35 @@ targets.update( cppms | {
         doc="The simplest version, which just prints status messages to stdout",
         path="demo/Demo.cpp",
         out="bin/demo",
-        args=[func(linker_args), "-lpcap"]
+        args=[func(linker_args), pcap]
     ),
     "bin/live": cpp(
         doc="This version draws live graphs",
         path="live/Live.cpp",
         out="bin/live",
-        args=["-lpcap"]
+        args=[func(linker_args), pcap]
     ),
     "bin/graph": cpp(
         doc="This version draws graphs from postgres",
         path="graph/Graph.cpp",
         out="bin/graph",
-        requirements=[find_pqxx],
-        args=[func(linker_args), "-lpcap", link(func(find_pqxx))]
+        requirements=[pqxx.validate],
+        args=[func(linker_args), pcap, pqxx]
     ),
     "bin/psqlsensor": cpp(
         doc="This is a minimal sensor that only can send data to postgres",
         path="psqlsensor/PsqlSensor.cpp",
         out="bin/psqlsensor",
-        requirements=[find_pqxx],
-        args=[func(linker_args), "-lpcap", link(func(find_pqxx))]
+        requirements=[pqxx.validate],
+        args=[func(linker_args), pcap, pqxx]
     ),
     "bin/bandwidthd": cpp(
         doc="This is the classic version, which does everything in one binary",
         path="classic/Classic.cpp",
         out="bin/bandwidthd",
-        optionals=[check_sqlite, check_pqxx],
-        args=[func(linker_args), "-lpcap", link(func(find_pqxx)), link(func(find_sqlite))]
+        requirements=[pqxx.validate],
+        optionals=[verify_sqlite],
+        args=[func(linker_args), pcap, pqxx, sqlitecpp, ]
     ),
     "classic": target({
         "doc":"As close to the original bandwidthd as we can get",
@@ -72,8 +71,8 @@ targets.update( cppms | {
         doc="This version exposes basic functionality through python",
         path="python/PyBandwidthd.cpp",
         out=PYLIB,
-        requirements=[find_pqxx, not_portable],
-        args=[func(linker_args), "-lpcap", link(func(find_pqxx)), proc("python3-config", "--includes", "--ldflags", "--embed"), "-Wno-old-style-cast", "-shared"]
+        requirements=[pqxx.validate, not_portable],
+        args=[func(linker_args), pcap, pqxx, proc("python3-config", "--includes", "--ldflags", "--embed"), "-Wno-old-style-cast", "-shared"]
     ),
     "setup": target({
         "virtual": True,
