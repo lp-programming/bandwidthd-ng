@@ -132,4 +132,44 @@ large scale environment. Since the database is the same format, the old script
 should work. If I get around to writing the web frontend, I'll probably
 integrate the functionality into that.
 
+** CMake
+You'll note this project doesn't use CMake, or a CMake frontend like qmake,
+premake, or similar. This is for 3 reasons.
+
+*** Modules
+CMake struggles with modules. It can build them, but clang's implicit headers
+aren't easy to support, and it isn't good at correctly detecting what actually
+needs rebuilding. I recently found the documentation to get ~import std;~
+working, so this part could be partially mitigated.
+
+*** ABI Incompatibilities
+CMake /also/ can't detect ABI incompatibilities in advance. When working with
+Clang and libc++ on Linux, if you try to use a library built with libstdc++, you
+can't link. CMake waits until the link step and then gives opaque errors about
+missing core componets like ~std::basic_string~. No amount of additional work on
+my part can resolve this with CMake.
+
+The recommended solution is to not rely on prebuilt dependencies: Just refernce
+the cmake files of all your deps and build them all with your current toolchain.
+Also, C+ /really/ needs an NPM-like package manager to make this easy.
+
+This is a *terible* idea. It opens the door to supply chain attacks. It violates
+separation of concerns. It increases build times. It multiplies exponentially
+the number of dependency versions that might interact. In short, it creates
+dependency hell.
+
+This project uses only the standard libraries, and libraies commonly available
+via most distribution package managers.
+
+*** License Hell
+That dependency problem created by having CMake chase down and include other
+libraries extends to a special kind of /Dependency Hell/ called /License Hell/.
+CMake does a lot for you. If you ask it to make static programs, it'll just do
+it. It'll even reach upstream to the cmake projects you included and make /them/
+static. The problem is it has /no/ idea what licenses are involved. Even if you
+take the time to look them up and ensure the default build configuration creates
+legal-to-distribute programs, it has no way to encode that information to
+prevent future or downstream issues. I can't entirely solve this, but I can
+ensure the build system prevents accidentally stepping in it.
+
 
