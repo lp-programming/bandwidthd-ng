@@ -170,7 +170,6 @@ class PackageDescription(pkg):
         if package.found:
             if mode == "portable" and self.name == "libpqxx":
                 l = Library("-lpgcommon_shlib", search_path, [], [ABIS.C], link_mode=static)
-                print(l)
                 package.libs.append(l)
             self.package[mode] = package
             return package
