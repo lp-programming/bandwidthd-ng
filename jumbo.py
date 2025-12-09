@@ -41,15 +41,11 @@ args.extend([
     "-DSKIP_CONSTEXPR_TESTS"
 ])
 
-if '-stdlib=libc++' in args:
-    args.remove('-stdlib=libc++')
-
 CXXFLAGS = os.environ.get('CXXFLAGS', os.environ.get('CFLAGS', []))
 if CXXFLAGS:
     CXXFLAGS = shlex.split(CXXFLAGS)
 
 args.extend(CXXFLAGS)
-    
 
 sources = list({i: True for i in getdeps(target.name)})
 
@@ -65,7 +61,9 @@ for h in headers:
 for a in target._Target__target.get("args"):
     if isinstance(a, targets.pkg):
         for l in a.getPackage(mode).libs:
-            l.license
+            if l.link_mode is targets.static:
+                l.license
+
 
 p = subprocess.Popen(args, stdout=-1, stdin=-1)
 for line in jumbo:
@@ -86,15 +84,15 @@ p.wait()
 
 if not p.poll():
     print("Done building")
-    print("Redistributing the generated object file requires complying with the following licenses")
     licenses = {}
     for a in target._Target__target.get("args"):
         if isinstance(a, targets.pkg):
             for l in a.getPackage(mode).libs:
                 if l.link_mode is targets.static:
                     licenses[l.name] = l.license
-    for k,v in licenses.items():
-        print(f"{k}: {v}")
+    if licenses:
+        print("Redistributing the generated object file requires complying with the following licenses")
+        for k,v in licenses.items():
+            print(f"{k}: {v}")
 
-        
 raise SystemExit(p.poll())
