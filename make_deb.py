@@ -48,7 +48,7 @@ Description: bandwidthd-ng
 import sys
 import os
 import jumbo
-from targets import pqxx
+from targets import *
 
 os.mkdir("target")
 os.mkdir("target/DEBIAN")
@@ -68,9 +68,15 @@ assert not os.system('CC=clang-19 CXX=clang++-19 CXXFLAGS=" -stdlib=libc++ " cma
 assert not os.system('CC=clang-19 CXX=clang++-19 CXXFLAGS=" -stdlib=libc++ " make -j `nproc`')
 assert not os.system('CC=clang-19 CXX=clang++-19 CXXFLAGS=" -stdlib=libc++ " make install')
 os.chdir("..")
-pqxx.pkgconf_flags = (f"--with-path={os.getcwd()}/build_libpqxx/static_pqxx/lib/pkgconfig")
+pqxx.pkgconf_flags = (f"--with-path={os.getcwd()}/libpqxx_build/static_pqxx/lib/pkgconfig")
+pqxx.package['release'] = Package.find_package("libpqxx", ["--with-path=libpqxx_build/static_pqxx/lib/pkgconfig"], link_mode=static | shared)
+pq = Package.find_package("libpq", [], link_mode=shared)
+pqxx.package['release'].libs.extend(pq.libs)
 
-for f in ["live", "bandwidthd", "graph", "psqlsensor"]:
+assert not jumbo.main((f"bin/live", "release"))
+os.environ['CXXFLAGS'] = "-lpqxx"
+
+for f in ["bandwidthd", "graph", "psqlsensor"]:
     assert not jumbo.main((f"bin/{f}", "release"))
 
 os.mkdir("target/usr")
