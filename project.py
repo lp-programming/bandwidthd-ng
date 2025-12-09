@@ -139,7 +139,7 @@ targets = {
 @dataclass
 class PackageDescription(pkg):
     name: str
-    pkgconf_flags:tuple[str] = ()
+    pkgconf_flags:tuple[str] = tuple(shlex.split(os.environ.get("PC_FLAGS", "")))
     libs: tuple[str] = ()
     Libs: tuple[str] = ()
     ld_flags: tuple[str] = ()
