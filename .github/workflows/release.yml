@@ -17,6 +17,7 @@ jobs:
         sudo apt-get install libpq-dev libc++-19-dev clang-19 libpcap-dev cmake
     - name: make
       run: |
+        pushd .. && tar -caf bandwidthd-ng_0.1.1.tar.zst bandwidthd-ng && popd
         PATH=/usr/lib/llvm-19/bin:$PATH python3 make_deb.py
 
     - name: Upload Package
@@ -30,4 +31,16 @@ jobs:
         asset_path: bandwidthd-ng_0.1.1.deb
         asset_name: bandwidthd-ng_0.1.1.deb
         asset_content_type: application/octet-stream
+    - name: Upload Source
+      id: upload-source
+      uses: actions/upload-release-asset@v1
+      
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ../bandwidthd-ng_0.1.1.tar.zst
+        asset_name: bandwidthd-ng_0.1.1.tar.zst
+        asset_content_type: application/octet-stream
+      
         
