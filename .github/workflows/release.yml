@@ -1,0 +1,31 @@
+name: Build deb
+
+on:
+  release:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    - name: deps
+      run: |
+        sudo apt-get purge libc++-18-dev clang-18
+        sudo apt-get install libpq-dev libc++-19-dev clang-19 libpcap-dev cmake
+    - name: make
+      run: |
+        python3 make_deb.py
+
+    - name: Upload deb to release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: bandwidthd-ng_0.1.1.deb
+        asset_name: bandwidthd-ng_0.1.1.deb
+        asset_content_type: application/vnd.debian.binary-package
+
