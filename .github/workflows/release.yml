@@ -3,6 +3,7 @@ name: Build deb
 on:
   release:
     branches: [ "master" ]
+    types: [created]
 
 jobs:
   build:
