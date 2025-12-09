@@ -19,13 +19,15 @@ jobs:
       run: |
         PATH=/usr/lib/llvm-19/bin:$PATH python3 make_deb.py
 
-    - name: Upload deb to release
+    - name: Upload Package
+      id: upload-package
       uses: actions/upload-release-asset@v1
+      
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ github.event.release.upload_url }}
         asset_path: bandwidthd-ng_0.1.1.deb
         asset_name: bandwidthd-ng_0.1.1.deb
-        asset_content_type: application/vnd.debian.binary-package
-
+        asset_content_type: application/octet-stream
+        
