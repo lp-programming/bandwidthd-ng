@@ -17,7 +17,7 @@ jobs:
         sudo apt-get install libpq-dev libc++-19-dev clang-19 libpcap-dev cmake
     - name: make
       run: |
-        python3 make_deb.py
+        PATH=/usr/lib/llvm-19/bin:$PATH python3 make_deb.py
 
     - name: Upload deb to release
       uses: actions/upload-release-asset@v1
