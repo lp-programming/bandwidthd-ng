@@ -1,11 +1,12 @@
 from pybuild import build, _target
+import os
 
-_target.UseFlags.default = -1
+if 'USE' in os.environ:
+  _target.UseFlags.default = -1
 
 import targets
 import sys
 import subprocess
-import os
 import shlex
 
 def main(argv=sys.argv[1:]):
