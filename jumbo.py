@@ -1,4 +1,7 @@
 from pybuild import build, _target
+
+_target.UseFlags.default = -1
+
 import targets
 import sys
 import subprocess

@@ -58,11 +58,15 @@ public:
     mem(mem),
     pg_cursor(maybe_ref(pg_cursor)),
     sq_cursor(maybe_ref(sq_cursor)) {
-    if (this->pg_cursor) {
-      pg_sensor_id = this->pg_cursor.value().get().GetSensorId();
+    if constexpr (HasPostgres()) {
+      if (this->pg_cursor) {
+        pg_sensor_id = this->pg_cursor.value().get().GetSensorId();
+      }
     }
-    if (this->sq_cursor) {
-      sq_sensor_id = this->sq_cursor.value().get().GetSensorId();
+    if constexpr (HasSqlite()) {
+      if (this->sq_cursor) {
+        sq_sensor_id = this->sq_cursor.value().get().GetSensorId();
+      }
     }
   }
 
@@ -198,7 +202,7 @@ int Main(const std::vector<std::string>& args) {
   }
   
   Memory memory{config};
-  ClassicSensor<Memory, Cursor<PostgresDB>, SqliteCursor> sensor{config, memory, pg_cursor, sq_cursor};
+  ClassicSensor<Memory, PostgresCursor, SqliteCursor> sensor{config, memory, pg_cursor, sq_cursor};
 
   if (background && fork()) {
     return 0;

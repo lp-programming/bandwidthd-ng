@@ -8,6 +8,7 @@ import <vector>;
 import <ranges>;
 import <numeric>;
 import <format>;
+import <array>;
 
 import net_integer;
 import SummaryData;

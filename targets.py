@@ -3,19 +3,47 @@ This is a procedural config file.
 
 """
 from project import *
-PYLIB = f"lib/PyBandwidthD{find_python() or '.so'}"
 
+
+def use_targets():
+    for k, v in dict(classic="classic",
+                     python="python",
+                     live="bin/live",
+                     graph="bin/graph",
+                     psqlsensor="bin/psqlsensor").items():
+        if target.use_flags[k] > -1:
+            yield v
 
 def not_portable(mode):
     if mode == "portable":
         print("Disabling component in portable build")
     return mode != "portable"
 
+bin_bandwidthd = cpp(
+    doc="This is the classic version, which does everything in one binary",
+    path="classic/Classic.cpp",
+    out="bin/bandwidthd",
+    requirements=[pcap.validate],
+    optionals=[],
+    args=[func(linker_args), pcap, pqxx, sqlitecpp, ]
+)
+
+match target.use_flags['sqlite']:
+    case 0:
+        bin_bandwidthd['optionals'].append(verify_sqlite)
+    case 1:
+        bin_bandwidthd['requirements'].append(sqlitecpp.validate)
+match target.use_flags['postgres']:
+    case 0:
+        bin_bandwidthd['optionals'].append(verify_postgres)
+    case 1:
+        bin_bandwidthd['requirements'].append(pqxx.validate)
+
 targets.update( cppms | {
     "all": target({
         "doc": "Default meta target - builds everything we can",
         "deps": ["core", "bin/demo", "bin/live"],
-        "targets": ["classic", "python", "bin/graph", "bin/psqlsensor"],
+        "targets": [*use_targets()],
         "virtual": True
     }),
     "core": target({
@@ -27,12 +55,14 @@ targets.update( cppms | {
         doc="The simplest version, which just prints status messages to stdout",
         path="demo/Demo.cpp",
         out="bin/demo",
+        requirements=[pcap.validate],
         args=[func(linker_args), pcap]
     ),
     "bin/live": cpp(
         doc="This version draws live graphs",
         path="live/Live.cpp",
         out="bin/live",
+        requirements=[pcap.validate],
         args=[func(linker_args), pcap]
     ),
     "bin/graph": cpp(
@@ -46,34 +76,15 @@ targets.update( cppms | {
         doc="This is a minimal sensor that only can send data to postgres",
         path="psqlsensor/PsqlSensor.cpp",
         out="bin/psqlsensor",
-        requirements=[pqxx.validate],
+        requirements=[pqxx.validate, pcap.validate],
         args=[func(linker_args), pcap, pqxx]
     ),
-    "bin/bandwidthd": cpp(
-        doc="This is the classic version, which does everything in one binary",
-        path="classic/Classic.cpp",
-        out="bin/bandwidthd",
-        requirements=[pqxx.validate],
-        optionals=[verify_sqlite],
-        args=[func(linker_args), pcap, pqxx, sqlitecpp, ]
-    ),
+    "bin/bandwidthd": bin_bandwidthd,
     "classic": target({
         "doc":"As close to the original bandwidthd as we can get",
         "virtual": True,
         "deps": ["bin/bandwidthd"]
     }),    
-    "python": target({
-        "doc":"Core functionality exposed to python for extensions",
-        "virtual": True,
-        "deps": [PYLIB]
-    }),
-    PYLIB: cpp(
-        doc="This version exposes basic functionality through python",
-        path="python/PyBandwidthd.cpp",
-        out=PYLIB,
-        requirements=[pqxx.validate, not_portable],
-        args=[func(linker_args), pcap, pqxx, proc("python3-config", "--includes", "--ldflags", "--embed"), "-Wno-old-style-cast", "-shared"]
-    ),
     "setup": target({
         "virtual": True,
         "deps": ["module-map"]
@@ -81,9 +92,26 @@ targets.update( cppms | {
     "module-map": target({
         "doc": "Rebuild the module map for the local system",
         "hash": str.join(" ", sorted(system_headers)),
-        "function": write_module_map        
+        "function": write_module_map
     }),
 })
 
 
 
+
+if target.use_flags['python'] > -1:
+    PYLIB = f"lib/PyBandwidthD{find_python() or '.so'}"
+    targets.update({
+        "python": target({
+            "doc":"Core functionality exposed to python for extensions",
+            "virtual": True,
+            "deps": [PYLIB]
+        }),
+        PYLIB: cpp(
+            doc="This version exposes basic functionality through python",
+            path="python/PyBandwidthd.cpp",
+            out=PYLIB,
+            requirements=[pqxx.validate, not_portable],
+            args=[func(linker_args), pcap, pqxx, proc("python3-config", "--includes", "--ldflags", "--embed"), "-Wno-old-style-cast", "-shared"]
+        ),
+    })

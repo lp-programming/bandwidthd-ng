@@ -29,7 +29,6 @@ target.modes['c_abi'] = [
     "-march=core2"
 ]
 
-
 target.modes['debug'] = [
     "-O2",
     "-ggdb3",
@@ -48,8 +47,6 @@ target.linker_args['c_abi'] = target.linker_args['portable'] = [
     "-lc++abi",
     "-Wl,-Bdynamic",
 ]
-
-
 
 def linker_args(mode):
     return target.linker_args.get(mode, [])
@@ -146,13 +143,21 @@ class PackageDescription(pkg):
     c_flags: tuple[str] = ()
     abis: tuple[ABIS] = (ABIS.C, ABIS.libcxx)
     package: {str:Package} = field(default_factory=dict)
+    use_flags: tuple[str] = ()
 
     def validate(self, mode):
+        for f in self.use_flags:
+            if target.use_flags[f] < 0:
+                return False
         return self.getPackage(mode).validate(mode)
 
     def getCFlags(self, mode):
+        if not self.validate(mode):
+            return []
         return self.getPackage(mode).getCFlags(mode)
     def getLDFlags(self, mode):
+        if not self.validate(mode):
+            return []
         p = self.getPackage(mode)
         
         return p.getLDFlags(mode, link_mode=get_linker_settings(mode).get("default", shared))
@@ -196,22 +201,43 @@ search_path = [f"-L{p}" for p in shlex.split(
 
 pqxx = PackageDescription("libpqxx",
                           libs=("-lpqxx", "-lpq"),
-                          Libs=search_path)
+                          Libs=search_path,
+                          use_flags=("postgres",))
 pcap = PackageDescription("libpcap",
                           libs=("-lpcap"),
                           Libs=search_path)
 sqlitecpp = PackageDescription("libsqlitecpp",
-                          libs=("-lSQLiteCpp", "-lsqlite3"),
-                          Libs=search_path)
+                               libs=("-lSQLiteCpp", "-lsqlite3"),
+                               Libs=search_path,
+                               use_flags=("sqlite",))
 
 def verify_sqlite(mode):
     if sqlitecpp.validate(mode):
         return []
     else:
+        if target.use_flags['sqlite'] == 1:
+            raise RuntimeError("sqlite not available, but selected USE flags require sqlite")
         print("sqlite not available")
         targets.pop(targets['Sqlite']['deps'][0])
         targets.update(stubs['Sqlite'])
         cppms.update(stubs['Sqlite'])
         return stubs['Sqlite']
 
- 
+def verify_postgres(mode):
+    if pqxx.validate(mode):
+        return []
+    else:
+        if target.use_flags['postgres'] == 1:
+            raise RuntimeError("pqxx not available, but selected USE flags require pqxx")
+        print("pqxx not available")
+        targets.pop(targets['Postgres']['deps'][0])
+        targets.update(stubs['Postgres'])
+        cppms.update(stubs['Postgres'])
+        return stubs['Postgres']
+
+if target.use_flags['sqlite'] == -1:
+    cppms.update(stubs['Sqlite'])
+
+if target.use_flags['postgres'] == -1:
+    cppms.update(stubs['Postgres'])
+
