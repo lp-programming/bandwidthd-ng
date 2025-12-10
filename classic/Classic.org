@@ -87,12 +87,21 @@ public:
   MEM& mem;
   std::optional<std::reference_wrapper<PG_CURSOR>> pg_cursor;
   std::optional<std::reference_wrapper<SQ_CURSOR>> sq_cursor;
+  int pg_sensor_id;
+  int sq_sensor_id;
 
   ClassicSensor(Config& config, MEM& mem, auto& pg_cursor, auto& sq_cursor):
     Sensor<ClassicSensor<MEM, PG_CURSOR, SQ_CURSOR>, Modes::BothDefault>(config),
     mem(mem),
     pg_cursor(maybe_ref(pg_cursor)),
-    sq_cursor(maybe_ref(sq_cursor)) {}
+    sq_cursor(maybe_ref(sq_cursor)) {
+    if (this->pg_cursor) {
+      pg_sensor_id = this->pg_cursor.value().get().GetSensorId();
+    }
+    if (this->sq_cursor) {
+      sq_sensor_id = this->sq_cursor.value().get().GetSensorId();
+    }
+  }
 
 #+end_src
 
@@ -134,14 +143,18 @@ runtime check to see if the sql backend is currently active.
 #+begin_src c++ :tangle "Classic.cpp"
       if constexpr (HasPostgres()) {
         if (base.pg_cursor) {
-          base.pg_cursor.value().get().SerializeData(base.ips, base.txrx, base.config.interval, now);
-          base.pg_cursor.value().get().SerializeData(base.ips6, base.txrx6, base.config.interval, now);
+          auto& p = base.pg_cursor.value().get();
+          p.UpdateSensor(base.pg_sensor_id);
+          p.SerializeData(base.pg_sensor_id, base.ips, base.txrx, base.config.interval, now);
+          p.SerializeData(base.pg_sensor_id, base.ips6, base.txrx6, base.config.interval, now);
         }
       }
       if constexpr (HasSqlite()) {
         if (base.sq_cursor) {
-          base.sq_cursor.value().get().SerializeData(base.ips, base.txrx, base.config.interval, now);
-          base.sq_cursor.value().get().SerializeData(base.ips6, base.txrx6, base.config.interval, now);
+          auto& s = base.sq_cursor.value().get();
+          s.UpdateSensor(base.sq_sensor_id);
+          s.SerializeData(base.sq_sensor_id, base.ips, base.txrx, base.config.interval, now);
+          s.SerializeData(base.sq_sensor_id, base.ips6, base.txrx6, base.config.interval, now);
         }
       }
 #+end_src

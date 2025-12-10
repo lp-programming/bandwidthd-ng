@@ -19,7 +19,6 @@ namespace bandwidthd {
   class Cursor : public CONN {
     CONN& connection;
     const Config& config;
-    int sensor_id{};
 
     CONN::prepared_t bd_tx_insert = connection.prepare("INSERT INTO bd_tx_log values ($$, $$, $$, $now, $$, $$, $$, $$, $$, $$, $$, $$, $$, $$);");
     CONN::prepared_t bd_rx_insert = connection.prepare("INSERT INTO bd_rx_log values ($$, $$, $$, $now, $$, $$, $$, $$, $$, $$, $$, $$, $$, $$);");
@@ -30,25 +29,25 @@ namespace bandwidthd {
 
     void validate() {
       auto txn = connection.begin();
-      txn.exec("CREATE TABLE IF NOT EXISTS sensors ( sensor_id serial PRIMARY KEY, sensor_name varchar, location int, build int default 0, uptime interval, reboots int default 0, interface varchar, description varchar, management_url varchar, last_connection timestamp_with_timezone );");
-      txn.exec("CREATE TABLE IF NOT EXISTS bd_rx_log (sensor_id int, mac varchar[20], ip inet, timestamp timestamp_with_timezone, sample_duration int, packet_count int, total int, icmp int, udp int, tcp int, ftp int, http int, mail int, p2p int); create index if not exists bd_rx_log_sensor_id_ip_timestamp_idx on bd_rx_log (sensor_id, ip, timestamp); create index if not exists bd_rx_log_sensor_id_timestamp_idx on bd_rx_log(sensor_id, timestamp);");
-      txn.exec("CREATE TABLE IF NOT EXISTS bd_tx_log (sensor_id int, mac varchar[20], ip inet, timestamp timestamp_with_timezone, sample_duration int, packet_count int, total int, icmp int, udp int, tcp int, ftp int, http int, mail int, p2p int); create index if not exists bd_tx_log_sensor_id_ip_timestamp_idx on bd_tx_log (sensor_id, ip, timestamp); create index if not exists bd_tx_log_sensor_id_timestamp_idx on bd_tx_log(sensor_id, timestamp);");
+      txn.exec("CREATE TABLE IF NOT EXISTS sensors ( sensor_id serial PRIMARY KEY, sensor_name varchar, location int, build int default 0, uptime interval, reboots int default 0, interface varchar, description varchar, management_url varchar, last_connection timestamptz );");
+      txn.exec("CREATE TABLE IF NOT EXISTS bd_rx_log (sensor_id int, mac varchar(20), ip inet, timestamp timestamptz, sample_duration int, packet_count int, total int, icmp int, udp int, tcp int, ftp int, http int, mail int, p2p int); create index if not exists bd_rx_log_sensor_id_ip_timestamp_idx on bd_rx_log (sensor_id, ip, timestamp); create index if not exists bd_rx_log_sensor_id_timestamp_idx on bd_rx_log(sensor_id, timestamp);");
+      txn.exec("CREATE TABLE IF NOT EXISTS bd_tx_log (sensor_id int, mac varchar(20), ip inet, timestamp timestamptz, sample_duration int, packet_count int, total int, icmp int, udp int, tcp int, ftp int, http int, mail int, p2p int); create index if not exists bd_tx_log_sensor_id_ip_timestamp_idx on bd_tx_log (sensor_id, ip, timestamp); create index if not exists bd_tx_log_sensor_id_timestamp_idx on bd_tx_log(sensor_id, timestamp);");
 
-      txn.exec("CREATE TABLE IF NOT EXISTS bd_rx_total_log (sensor_id int, mac varchar[20], ip inet, timestamp timestamp_with_timezone DEFAULT now(), sample_duration int, packet_count int, total int, icmp int, udp int, tcp int, ftp int, http int, mail int, p2p int); CREATE index IF NOT EXISTS bd_rx_total_log_sensor_id_timestamp_ip_idx on bd_rx_total_log (sensor_id, timestamp);");
-      txn.exec("CREATE TABLE IF NOT EXISTS bd_tx_total_log (sensor_id int, mac varchar[20], ip inet, timestamp timestamp_with_timezone  DEFAULT now(), sample_duration int, packet_count int, total int, icmp int, udp int, tcp int, ftp int, http int, mail int, p2p int); CREATE index IF NOT EXISTS bd_tx_total_log_sensor_id_timestamp_ip_idx on bd_tx_total_log (sensor_id, timestamp);");
+      txn.exec("CREATE TABLE IF NOT EXISTS bd_rx_total_log (sensor_id int, mac varchar(20), ip inet, timestamp timestamptz DEFAULT now(), sample_duration int, packet_count int, total int, icmp int, udp int, tcp int, ftp int, http int, mail int, p2p int); CREATE index IF NOT EXISTS bd_rx_total_log_sensor_id_timestamp_ip_idx on bd_rx_total_log (sensor_id, timestamp);");
+      txn.exec("CREATE TABLE IF NOT EXISTS bd_tx_total_log (sensor_id int, mac varchar(20), ip inet, timestamp timestamptz  DEFAULT now(), sample_duration int, packet_count int, total int, icmp int, udp int, tcp int, ftp int, http int, mail int, p2p int); CREATE index IF NOT EXISTS bd_tx_total_log_sensor_id_timestamp_ip_idx on bd_tx_total_log (sensor_id, timestamp);");
 
-      txn.exec("CREATE TABLE IF NOT EXISTS links (id1 int, id2 int, plot boolean default TRUE, last_update timestamp_with_timezone);");
+      txn.exec("CREATE TABLE IF NOT EXISTS links (id1 int, id2 int, plot boolean default TRUE, last_update timestamptz);");
 
       
 
-      txn.exec("CREATE TABLE IF NOT EXISTS bd_tx_rx_log (sensor_id int, mac varchar, srcip inet, dstip inet, timestamp timestamp_with_timezone, sample_duration int, packet_count int, total int, icmp int, udp int, tcp int, ftp int, http int, mail int, p2p int); create index if not exists bd_tx_rx_log_sensor_id_ip_timestamp_idx on bd_tx_log (sensor_id, ip, timestamp); create index if not exists bd_tx_rx_log_sensor_id_timestamp_idx on bd_tx_rx_log(sensor_id, timestamp);");
+      txn.exec("CREATE TABLE IF NOT EXISTS bd_tx_rx_log (sensor_id int, mac varchar(20), srcip inet, dstip inet, timestamp timestamptz, sample_duration int, packet_count int, total int, icmp int, udp int, tcp int, ftp int, http int, mail int, p2p int); create index if not exists bd_tx_rx_log_sensor_id_ip_timestamp_idx on bd_tx_log (sensor_id, ip, timestamp); create index if not exists bd_tx_rx_log_sensor_id_timestamp_idx on bd_tx_rx_log(sensor_id, timestamp);");
       txn.commit();
 
     
     }
 
   public:
-    Cursor(const Config& config): CONN(config), connection(*this), config(config), sensor_id(GetSensorId()) {
+    Cursor(const Config& config): CONN(config), connection(*this), config(config) {
       validate();
     }
 
@@ -64,13 +63,13 @@ namespace bandwidthd {
       return GetSensorId();
     }
 
-    void UpdateSensor() {
+    void UpdateSensor(int sensor_id) {
       auto txn = connection.begin();
       txn.exec(update_sensor, typename CONN::params{config.description, config.management_url, 1, 1, sensor_id});
       txn.commit();
     }
 
-    void SerializeData(this auto& self, const auto& IPs, const auto& both, const std::chrono::seconds duration, const auto now) {
+    void SerializeData(this auto& self, int sensor_id, const auto& IPs, const auto& both, const std::chrono::seconds duration, const auto now) {
       auto d = duration.count();
       auto txn = self.connection.begin();
       std::string timestamp = std::format("{:%Y-%m-%d %H:%M:%S}", std::chrono::floor<std::chrono::seconds>(now));
@@ -82,10 +81,10 @@ namespace bandwidthd {
         const auto &label = data.label;
         const std::string strip = util::format_ip(ip);
 
-        txn.exec(self.bd_tx_insert, typename CONN::params{self.sensor_id, label, strip, timestamp, d, sent.packet_count,
+        txn.exec(self.bd_tx_insert, typename CONN::params{sensor_id, label, strip, timestamp, d, sent.packet_count,
                                                           sent.total, sent.icmp, sent.udp, sent.tcp, sent.ftp,
                                                           sent.http, sent.mail, sent.p2p});
-        txn.exec(self.bd_rx_insert, typename CONN::params{self.sensor_id, label, strip, timestamp, d, recv.packet_count,
+        txn.exec(self.bd_rx_insert, typename CONN::params{sensor_id, label, strip, timestamp, d, recv.packet_count,
                                                           recv.total, recv.icmp, recv.udp, recv.tcp, recv.ftp,
                                                           recv.http, recv.mail, recv.p2p});
       }
@@ -99,7 +98,7 @@ namespace bandwidthd {
         const std::string strsrcip = util::format_ip(srcip);
         const std::string strdstip = util::format_ip(dstip);
             
-        txn.exec(self.bd_tx_rx_insert, typename CONN::params{self.sensor_id, data.label, strsrcip, strdstip, timestamp,
+        txn.exec(self.bd_tx_rx_insert, typename CONN::params{sensor_id, data.label, strsrcip, strdstip, timestamp,
                                                              d, data.packet_count, data.total, data.icmp, data.udp,
                                                              data.tcp, data.ftp, data.http, data.mail, data.p2p});
       }

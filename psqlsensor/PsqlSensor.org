@@ -21,10 +21,13 @@ using Logger = lpprogramming::Syslog::Logger;
 template<typename CURSOR>
 class DatabaseWritingSensor: public Sensor<DatabaseWritingSensor<CURSOR>, Modes::BothDefault>  {
   CURSOR& cursor;
+  int pg_sensor_id;
 public:
   DatabaseWritingSensor(Config& config, CURSOR& cursor): Sensor<DatabaseWritingSensor<CURSOR>,
                                                                 Modes::IPv4Default | Modes::IPv6Default>(config),
-                                                         cursor(cursor) { }
+                                                         cursor(cursor) {
+    pg_sensor_id = cursor.GetSensorId();
+  }
   int Main(this auto& base) {
     for (;;) {
       const auto starttime = std::chrono::system_clock::now();
@@ -35,10 +38,11 @@ public:
           base.Step();
         }
       }
-      base.cursor.SerializeData(base.ips, base.txrx, base.config.interval, now);
+      base.cursor.UpdateSensor(base.pg_sensor_id);
+      base.cursor.SerializeData(base.pg_sensor_id, base.ips, base.txrx, base.config.interval, now);
       base.ips.clear();
       base.txrx.clear();
-      base.cursor.SerializeData(base.ips6, base.txrx6, base.config.interval, now);
+      base.cursor.SerializeData(base.pg_sensor_id, base.ips6, base.txrx6, base.config.interval, now);
       base.ips.clear();
       base.txrx6.clear();
     }
